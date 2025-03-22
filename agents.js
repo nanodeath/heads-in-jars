@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { createMessage } from './utils.js';
+import { createMessage, debugLog, calculateCost } from './utils.js';
 
 /**
  * Base class for AI agents
@@ -38,7 +38,7 @@ class Agent {
     this.lowEndModel = lowEndModel;
     this.highEndModel = highEndModel;
     this.maxTokens = maxTokens;
-    this.lastSpoken = 0; // Timestamp of last message
+    this.messagesSinceLastSpoken = 0; // Count of messages since this agent last spoke
     this.introduction = null;
   }
 
@@ -54,6 +54,15 @@ class Agent {
       Write a brief introduction of yourself in first person, explaining your role and what you bring to the meeting.
       Keep it under 100 words and make it sound natural.
     `;
+    
+    debugLog(`Generating introduction for ${this.name}`);
+    
+    // Log the request in debug mode
+    debugLog(`Introduction API request for ${this.name}`, {
+      model: this.lowEndModel,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }]
+    });
     
     try {
       const response = await this.client.messages.create({
@@ -74,6 +83,23 @@ class Agent {
         throw new Error('Invalid response format from API');
       }
       
+      // Log the response in debug mode
+      debugLog(`Introduction API response for ${this.name}`, {
+        content: response.content[0].text,
+        usage: response.usage
+      });
+      
+      // Calculate and log cost estimate
+      const costEstimate = calculateCost(this.lowEndModel, response.usage);
+      debugLog(`💰 Cost estimate for ${this.name} introduction generation:`, {
+        model: this.lowEndModel,
+        inputTokens: costEstimate.inputTokens,
+        outputTokens: costEstimate.outputTokens,
+        inputCost: `$${costEstimate.inputCost}`,
+        outputCost: `$${costEstimate.outputCost}`,
+        totalCost: `$${costEstimate.totalCost}`
+      });
+      
       this.introduction = response.content[0].text;
       return this.introduction;
     } catch (error) {
@@ -86,14 +112,16 @@ class Agent {
   /**
    * Calculate how urgently this agent needs to speak (1-5 scale)
    * @param {Array} recentMessages - Recent messages from the conversation
+   * @param {string} currentAgendaItem - Current agenda item being discussed
    * @returns {Promise<number>} Urgency score
    */
-  async calculateUrgency(recentMessages) {
+  async calculateUrgency(recentMessages, currentAgendaItem) {
+    // Create a more structured system prompt for calculating urgency
     const systemPrompt = `
-      You are ${this.name}, ${this.persona}.
+      You are an AI assistant helping to determine how urgently a meeting participant needs to speak.
       
-      Below are the most recent messages from a meeting conversation.
-      Based on these messages, rate on a scale of 1-5 how urgently you feel you need to contribute:
+      Based on the context and recent messages, you will analyze whether this participant should contribute now.
+      You will output ONLY a number from 1-5 representing urgency:
       
       1: No need to speak, nothing to add right now
       2: Might have something minor to contribute
@@ -104,18 +132,40 @@ class Agent {
       IMPORTANT: Respond ONLY with a single number from 1-5, nothing else.
     `;
     
+    debugLog(`${this.name} calculating urgency...`);
+    
+    // Extract the last 5 messages only for the recent context
+    const lastFewMessages = recentMessages.slice(-5).map(m => 
+      `${m.agentId || 'User'}: ${m.content}`
+    ).join('\n');
+    
+    // Create a structured multi-shot prompt with relevant context
+    const userContent = `
+MEETING CONTEXT:
+- Current agenda item: "${currentAgendaItem}"
+- Your role: ${this.role} (${this.name})
+- Your persona: ${this.persona}
+
+RECENT MESSAGES:
+${lastFewMessages}
+
+Based on this context, how urgently do you need to speak (1-5)?
+    `.trim();
+    
+    // Log the request in debug mode
+    debugLog(`Urgency API request for ${this.name}`, {
+      model: this.lowEndModel,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }]
+    });
+    
     try {
       const response = await this.client.messages.create({
         model: this.lowEndModel,
         max_tokens: 10,
         system: systemPrompt,
         messages: [
-          { 
-            role: 'user', 
-            content: `Recent messages:\n${recentMessages.map(m => 
-              `${m.agentId || 'User'}: ${m.content}`
-            ).join('\n')}`
-          }
+          { role: 'user', content: userContent }
         ]
       });
       
@@ -128,6 +178,20 @@ class Agent {
         throw new Error('Invalid response format from API');
       }
       
+      // Debug log the response
+      debugLog(`Urgency API response for ${this.name}`, response);
+      
+      // Calculate and log cost estimate
+      const costEstimate = calculateCost(this.lowEndModel, response.usage);
+      debugLog(`💰 Cost estimate for ${this.name} urgency calculation:`, {
+        model: this.lowEndModel,
+        inputTokens: costEstimate.inputTokens,
+        outputTokens: costEstimate.outputTokens,
+        inputCost: `$${costEstimate.inputCost}`,
+        outputCost: `$${costEstimate.outputCost}`,
+        totalCost: `$${costEstimate.totalCost}`
+      });
+      
       // Extract just the number from the response
       const urgencyText = response.content[0].text.trim();
       let urgency = parseFloat(urgencyText) || 3.0;
@@ -135,11 +199,20 @@ class Agent {
       // Clamp between 1-5
       urgency = Math.max(1.0, Math.min(5.0, urgency));
       
-      // Add time factor - give a boost if the agent hasn't spoken in a while
-      const timeSinceLastSpoken = Date.now() - this.lastSpoken || 60000;
-      const timeBoost = Math.min(2.0, Math.max(0, 0.5 * (timeSinceLastSpoken / 60000)));
+      // Add message count factor - give a boost if the agent hasn't spoken in a while
+      // Calculate boost based on messages since last spoken (max boost of 2.0 after 10 messages)
+      const messageBoost = Math.min(2.0, Math.max(0, 0.2 * this.messagesSinceLastSpoken));
       
-      const totalUrgency = urgency + timeBoost;
+      const totalUrgency = urgency + messageBoost;
+      
+      // Log the urgency calculation
+      debugLog(`${this.name} urgency calculation:`, {
+        baseUrgency: urgency,
+        messagesSinceLastSpoken: this.messagesSinceLastSpoken,
+        messageBoost: messageBoost.toFixed(2),
+        totalUrgency: totalUrgency.toFixed(2)
+      });
+      
       return totalUrgency;
       
     } catch (error) {
@@ -154,8 +227,8 @@ class Agent {
    * @returns {Promise<string>} Generated response
    */
   async generateResponse(conversation) {
-    // Update last spoken timestamp
-    this.lastSpoken = Date.now();
+    // Reset the count of messages since last spoken
+    this.messagesSinceLastSpoken = 0;
     
     const systemPrompt = `
       You are ${this.name}, ${this.persona}.
@@ -163,8 +236,8 @@ class Agent {
       You are participating in a meeting with other AI agents. Respond in a way that's consistent with your persona.
       Keep your responses concise and to the point, focused on adding value to the discussion.
       
-      IMPORTANT GUIDELINES:
-      1. You must speak ONLY as ${this.name} - do not respond on behalf of other meeting participants.
+      Rules:
+      1. You must speak ONLY as ${this.name} - DO NOT respond on behalf of other meeting participants.
       2. Keep your response BRIEF - no more than 2-3 short paragraphs maximum.
       3. Be focused and direct - make your point clearly without rambling.
       4. Reply as if you are speaking in a real meeting - use natural language, don't be robotic.
@@ -172,18 +245,18 @@ class Agent {
     
     // Format conversation for the API
     const formattedMessages = conversation.map(message => {
-      if (message.role === 'assistant' && message.agentId) {
-        // Keep person's name but don't include agentId to avoid confusion
-        return { 
-          role: 'assistant', 
-          content: message.content
-        };
-      } else {
-        return { 
-          role: message.role, 
-          content: message.content 
-        };
-      }
+      // Other agents are the "user" to keep the agent from confusing identity.
+      return { 
+        role: message.agentId === this.agentId ? 'assistant' : 'user',
+        content: (message.agentId ? `${message.agentId}: ` : '') + message.content
+      };
+    });
+    
+    // Log the request in debug mode
+    debugLog(`Response API request for ${this.name}`, {
+      model: this.highEndModel,
+      system: systemPrompt,
+      messages: formattedMessages
     });
     
     try {
@@ -202,6 +275,23 @@ class Agent {
       if (!response.content[0] || typeof response.content[0].text !== 'string') {
         throw new Error('Invalid response format from API');
       }
+      
+      // Log the response in debug mode
+      debugLog(`Response API response for ${this.name}`, {
+        content: response.content[0].text,
+        usage: response.usage
+      });
+      
+      // Calculate and log cost estimate
+      const costEstimate = calculateCost(this.highEndModel, response.usage);
+      debugLog(`💰 Cost estimate for ${this.name} response generation:`, {
+        model: this.highEndModel,
+        inputTokens: costEstimate.inputTokens,
+        outputTokens: costEstimate.outputTokens,
+        inputCost: `$${costEstimate.inputCost}`,
+        outputCost: `$${costEstimate.outputCost}`,
+        totalCost: `$${costEstimate.totalCost}`
+      });
       
       return response.content[0].text;
     } catch (error) {

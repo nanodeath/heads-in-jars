@@ -4,7 +4,7 @@ import ora from 'ora';
 import enquirer from 'enquirer';
 const { Input } = enquirer;
 import { Agent, ModeratorAgent } from './agents.js';
-import { createMessage, sleep } from './utils.js';
+import { createMessage, sleep, debugLog } from './utils.js';
 
 /**
  * Class for simulating a meeting with AI agents
@@ -96,7 +96,7 @@ class MeetingSimulator {
   }
 
   /**
-   * Add a message to the conversation history
+   * Add a message to the conversation history and update message counts
    * @param {string} role - Message role ('user' or 'assistant')
    * @param {string} content - Message content
    * @param {string} agentId - Agent ID for assistant messages
@@ -104,6 +104,30 @@ class MeetingSimulator {
   _addMessage(role, content, agentId = null) {
     const message = createMessage(role, content, agentId);
     this.conversation.push(message);
+    
+    // Increment messagesSinceLastSpoken for all agents except the one speaking
+    if (role === 'assistant' && agentId) {
+      Object.entries(this.agents).forEach(([id, agent]) => {
+        if (id !== agentId && id !== 'moderator') {
+          agent.messagesSinceLastSpoken++;
+          
+          if (global.isDebugMode) {
+            debugLog(`Incremented message count for ${agent.name} to ${agent.messagesSinceLastSpoken}`);
+          }
+        }
+      });
+    } else if (role === 'user') {
+      // When user speaks, increment for all non-moderator agents
+      Object.entries(this.agents).forEach(([id, agent]) => {
+        if (id !== 'moderator') {
+          agent.messagesSinceLastSpoken++;
+          
+          if (global.isDebugMode) {
+            debugLog(`Incremented message count for ${agent.name} to ${agent.messagesSinceLastSpoken}`);
+          }
+        }
+      });
+    }
   }
 
   /**
@@ -200,14 +224,47 @@ class MeetingSimulator {
         const urgencyScores = {};
         const urgencySpinner = ora('Agents considering responses...').start();
         
+        debugLog('Calculating urgency scores for all participants');
+        
+        // Get current agenda item
+        const currentAgendaItem = this.agenda[this.moderator.currentAgendaItem];
+        
+        // Collect all urgency calculation promises
+        const urgencyPromises = [];
         for (const [agentId, agent] of Object.entries(this.agents)) {
           if (agentId !== 'moderator') {
-            const urgency = await agent.calculateUrgency(recentMessages);
-            urgencyScores[agentId] = urgency;
+            const promise = agent.calculateUrgency(recentMessages, currentAgendaItem)
+              .then(urgency => {
+                urgencyScores[agentId] = urgency;
+                return { agentId, urgency };
+              });
+            urgencyPromises.push(promise);
           }
         }
         
+        // Wait for all urgency calculations to complete
+        const urgencyResults = await Promise.all(urgencyPromises);
+        
         urgencySpinner.stop();
+        
+        // Display urgency scores in debug mode
+        if (global.isDebugMode) {
+          console.log(chalk.gray('=== Urgency Scores ==='));
+          
+          // Sort by urgency score (highest first)
+          const sortedScores = Object.entries(urgencyScores)
+            .sort((a, b) => b[1] - a[1]);
+          
+          for (const [agentId, score] of sortedScores) {
+            const agent = this.agents[agentId];
+            // Display each agent's urgency score with formatting based on how urgent it is
+            const scoreColor = score >= 4 ? 'redBright' : 
+                           score >= 3 ? 'yellowBright' : 'greenBright';
+            console.log(chalk.gray(`${agent.name} [${agent.role}]: `) + 
+                        chalk[scoreColor](`${score.toFixed(2)}`));
+          }
+          console.log(chalk.gray('====================='));
+        }
         
         // Let moderator choose next speaker, influenced by urgency scores
         const nextSpeakerSuggestions = Object.entries(urgencyScores)
@@ -215,14 +272,21 @@ class MeetingSimulator {
           .slice(0, 3); // Top 3 most urgent
         
         let nextSpeaker;
+        let speakerSelectionReason;
         
         if (Math.random() < 0.7 && nextSpeakerSuggestions.length > 0) {
           // 70% chance to pick from top urgent speakers
           nextSpeaker = nextSpeakerSuggestions[0][0];
+          speakerSelectionReason = "highest urgency score";
         } else {
           // 30% chance to let moderator decide completely
           nextSpeaker = await this.moderator.chooseNextSpeaker(this.agents, this.conversation);
+          speakerSelectionReason = "moderator selection";
         }
+        
+        // Log how the next speaker was selected
+        debugLog(`Selected next speaker: ${this.agents[nextSpeaker].name} (${speakerSelectionReason})`);
+        
         
         // Generate the chosen agent's response with interruption possibility
         const agent = this.agents[nextSpeaker];
@@ -246,6 +310,9 @@ class MeetingSimulator {
         
         // Start the spinner with interrupt message
         const responseSpinner = ora(`${agent.name} is thinking...press ^C to interrupt.`).start();
+        
+        // Log that we're generating a response
+        debugLog(`Generating response for ${agent.name} [${agent.role}]`);
         
         // Start response generation as a separate promise we can handle
         const responsePromise = agent.generateResponse(this.conversation);

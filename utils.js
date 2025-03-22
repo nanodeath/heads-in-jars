@@ -76,3 +76,86 @@ export function createMessage(role, content, agentId = null) {
   export function generateId() {
     return Math.random().toString(36).substring(2, 15);
   }
+  
+  /**
+   * Debug logging utility - only logs when debug mode is enabled
+   * @param {string} message - The message to log
+   * @param {Object|string} [data] - Optional data to log (will be JSON stringified if object)
+   */
+  export function debugLog(message, data) {
+    // This will be set to true in index.js when --debug flag is present
+    if (!global.isDebugMode) return;
+    
+    // Use gray color for debug messages to be more subtle
+    const timestamp = new Date().toISOString().slice(11, 19); // HH:MM:SS
+    
+    if (data === undefined) {
+      console.log(`\x1b[90m[DEBUG ${timestamp}] ${message}\x1b[0m`);
+    } else {
+      const dataString = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+      console.log(`\x1b[90m[DEBUG ${timestamp}] ${message}\n${dataString}\x1b[0m`);
+    }
+  }
+  
+  /**
+   * Calculate estimated cost for an API call based on token usage
+   * @param {string} model - The model name
+   * @param {Object} usage - The usage object from the API response
+   * @returns {Object} Cost estimate information
+   */
+  export function calculateCost(model, usage) {
+    if (!usage || !usage.input_tokens || !usage.output_tokens) {
+      return { 
+        inputCost: 'unknown', 
+        outputCost: 'unknown', 
+        totalCost: 'unknown',
+        disclaimer: 'No token usage data available'
+      };
+    }
+    
+    const inputTokens = usage.input_tokens;
+    const outputTokens = usage.output_tokens;
+    
+    // Pricing per 1M tokens (as of March 2024)
+    // These are approximate and may change
+    const pricing = {
+      // Claude 3 models
+      'claude-3-opus': { input: 15.00, output: 75.00 },
+      'claude-3-sonnet': { input: 3.00, output: 15.00 },
+      'claude-3-haiku': { input: 0.25, output: 1.25 },
+      // Claude 3.5 models
+      'claude-3-5-sonnet': { input: 3.00, output: 15.00 },
+      'claude-3-5-haiku': { input: 0.25, output: 1.25 },
+      // Claude 3.7 models
+      'claude-3-7-sonnet': { input: 5.00, output: 25.00 }
+    };
+    
+    // Find the matching price model (handle "latest" variants)
+    let price;
+    for (const [priceModel, priceData] of Object.entries(pricing)) {
+      if (model.includes(priceModel)) {
+        price = priceData;
+        break;
+      }
+    }
+    
+    // If no matching price found, use a default
+    if (!price) {
+      price = { input: 3.00, output: 15.00 }; // Default to Sonnet pricing
+    }
+    
+    // Calculate costs in USD
+    const inputCost = (inputTokens / 1000000) * price.input;
+    const outputCost = (outputTokens / 1000000) * price.output;
+    const totalCost = inputCost + outputCost;
+    
+    return {
+      model,
+      inputTokens,
+      outputTokens,
+      inputCost: inputCost.toFixed(6),
+      outputCost: outputCost.toFixed(6),
+      totalCost: totalCost.toFixed(6),
+      disclaimer: 'Cost is approximate and based on public pricing'
+    };
+  }

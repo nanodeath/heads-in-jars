@@ -11,14 +11,18 @@ import logUpdate from 'log-update';
 // Load environment variables
 config();
 
-// Check for validation mode
+// Check for validation and debug modes
 const isValidationMode = process.argv.includes('--validate');
+const isDebugMode = process.argv.includes('--debug');
+
+// Set debug mode globally so it can be accessed from any module
+global.isDebugMode = isDebugMode;
 
 // Import agent and meeting modules
 import { Agent, ModeratorAgent } from './agents.js';
 import { MeetingSimulator } from './meeting.js';
 import { availablePersonas } from './personas.js';
-import { createMessage, sleep, formatDuration, truncateText, containsAny, generateId } from './utils.js';
+import { createMessage, sleep, formatDuration, truncateText, containsAny, generateId, debugLog, calculateCost } from './utils.js';
 
 // Validate all imports
 function validateImports() {
@@ -62,6 +66,12 @@ async function main() {
     console.log(chalk.green('Validation completed successfully!'));
     process.exit(0);
     return;
+  }
+  
+  // Show debug mode status
+  if (isDebugMode) {
+    console.log(chalk.gray('Debug mode: Enabled'));
+    debugLog('Debug output will appear in this color');
   }
   try {
     // Get Anthropic API key
