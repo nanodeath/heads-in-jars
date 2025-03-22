@@ -4,7 +4,7 @@ import ora from 'ora';
 import enquirer from 'enquirer';
 const { Input } = enquirer;
 import { Agent, ModeratorAgent } from './agents.js';
-import { createMessage } from './utils.js';
+import { createMessage, sleep } from './utils.js';
 
 /**
  * Class for simulating a meeting with AI agents
@@ -81,6 +81,7 @@ class MeetingSimulator {
         agentId,
         name: personaInfo.name,
         persona: personaInfo.persona,
+        role: personaInfo.role,
         color: personaInfo.color,
         client: this.client,
         lowEndModel: this.lowEndModel,
@@ -223,16 +224,69 @@ class MeetingSimulator {
           nextSpeaker = await this.moderator.chooseNextSpeaker(this.agents, this.conversation);
         }
         
-        // Generate and display the chosen agent's response
+        // Generate the chosen agent's response with interruption possibility
         const agent = this.agents[nextSpeaker];
         
-        const responseSpinner = ora(`${agent.name} is thinking...`).start();
-        const response = await agent.generateResponse(this.conversation);
-        responseSpinner.stop();
+        // Set up a flag to track if we've been interrupted
+        let interrupted = false;
         
-        agent.printMessage(response);
-        this._addMessage('assistant', response, nextSpeaker);
-        turnsSinceUserInput += 1;
+        // Set up interrupt handler for SIGINT (Ctrl+C)
+        const originalSigIntHandler = process.listeners('SIGINT').pop();
+        if (originalSigIntHandler) {
+          process.removeListener('SIGINT', originalSigIntHandler);
+        }
+        
+        // Add our custom handler
+        const sigintHandler = () => {
+          interrupted = true;
+          responseSpinner.stop();
+          console.log(chalk.yellow('\nInterrupted! Your turn to speak.'));
+        };
+        process.on('SIGINT', sigintHandler);
+        
+        // Start the spinner with interrupt message
+        const responseSpinner = ora(`${agent.name} is thinking...press ^C to interrupt.`).start();
+        
+        // Start response generation as a separate promise we can handle
+        const responsePromise = agent.generateResponse(this.conversation);
+        
+        // Wait for either response completion or interruption
+        const response = await responsePromise.catch(error => {
+          console.error(`Error generating response: ${error.message}`);
+          return `[Error generating response: ${error.message}]`;
+        });
+        
+        // Only proceed with displaying the response if not interrupted
+        if (!interrupted) {
+          responseSpinner.stop();
+          agent.printMessage(response);
+          this._addMessage('assistant', response, nextSpeaker);
+          turnsSinceUserInput += 1;
+        } else {
+          // User interrupted, let them speak
+          const userInput = await new Input({
+            name: 'input',
+            message: chalk.white.bold('You:'),
+            initial: '',
+          }).run();
+          
+          if (['exit', 'quit', 'end meeting'].includes(userInput.toLowerCase())) {
+            console.log(chalk.white.bold('\n=== Ending Meeting Early ===\n'));
+            const endMessage = await this.moderator.endMeeting(this.conversation);
+            this.moderator.printMessage(endMessage);
+            this._addMessage('assistant', endMessage, 'moderator');
+            meetingActive = false;
+          } else {
+            this._addMessage('user', userInput);
+            turnsSinceUserInput = 0;
+          }
+        }
+        
+        // Restore original SIGINT handler
+        process.removeListener('SIGINT', sigintHandler);
+        if (originalSigIntHandler) {
+          process.on('SIGINT', originalSigIntHandler);
+        }
       }
       
       // Brief pause between turns for readability

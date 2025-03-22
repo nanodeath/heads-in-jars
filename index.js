@@ -111,31 +111,33 @@ async function main() {
     }).run();
     
     // Get agenda items
-    console.log(chalk.yellow('\nEnter agenda items (add as many as needed):'));
+    console.log(chalk.yellow('\nEnter agenda items (leave blank when done):'));
     
     const agenda = [];
-    let addingAgendaItems = true;
+    let itemNumber = 1;
     
-    while (addingAgendaItems) {
+    // Set initial agenda item suggestion
+    let initialValue = 'Project status updates';
+    
+    while (true) {
       const agendaItem = await new Input({
         name: 'item',
-        message: `Agenda item #${agenda.length + 1}:`,
-        initial: agenda.length === 0 ? 'Project status updates' : ''
+        message: `Agenda item #${itemNumber}:`,
+        initial: initialValue,
+        hint: itemNumber === 1 ? '(press Enter to submit, leave blank when finished)' : '(leave blank when finished)'
       }).run();
       
-      if (agendaItem.trim()) {
-        agenda.push(agendaItem);
+      // Clear the initial value after first item
+      initialValue = '';
+      
+      // If blank item, break the loop
+      if (!agendaItem.trim()) {
+        break;
       }
       
-      if (agenda.length > 0) {
-        const addMore = await new Confirm({
-          name: 'continue',
-          message: 'Add another agenda item?',
-          initial: agenda.length < 3
-        }).run();
-        
-        addingAgendaItems = addMore;
-      }
+      // Add item and increment counter
+      agenda.push(agendaItem);
+      itemNumber++;
     }
     
     // If no agenda items were added, use default ones

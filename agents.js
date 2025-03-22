@@ -11,6 +11,7 @@ class Agent {
    * @param {string} options.agentId - Unique identifier for the agent
    * @param {string} options.name - Display name for the agent
    * @param {string} options.persona - Description of the agent's personality and role
+   * @param {string} options.role - Short role title (e.g., "PM", "Dev") 
    * @param {string} options.color - Color for the agent's messages
    * @param {Object} options.client - Anthropic API client
    * @param {string} options.lowEndModel - Model to use for urgency calculations
@@ -21,6 +22,7 @@ class Agent {
     agentId,
     name,
     persona,
+    role,
     color,
     client,
     lowEndModel = 'claude-3-haiku-20240307',
@@ -30,6 +32,7 @@ class Agent {
     this.agentId = agentId;
     this.name = name;
     this.persona = persona;
+    this.role = role;
     this.color = color;
     this.client = client;
     this.lowEndModel = lowEndModel;
@@ -52,17 +55,32 @@ class Agent {
       Keep it under 100 words and make it sound natural.
     `;
     
-    const response = await this.client.messages.create({
-      model: this.lowEndModel,
-      max_tokens: 150,
-      system: systemPrompt,
-      messages: [
-        { role: 'user', content: 'Please introduce yourself briefly.' }
-      ]
-    });
-    
-    this.introduction = response.content[0].text;
-    return this.introduction;
+    try {
+      const response = await this.client.messages.create({
+        model: this.lowEndModel,
+        max_tokens: 150,
+        system: systemPrompt,
+        messages: [
+          { role: 'user', content: 'Please introduce yourself briefly.' }
+        ]
+      });
+      
+      // Better error handling for response structure
+      if (!response || !response.content || !response.content.length) {
+        throw new Error('Empty response received from API');
+      }
+      
+      if (!response.content[0] || typeof response.content[0].text !== 'string') {
+        throw new Error('Invalid response format from API');
+      }
+      
+      this.introduction = response.content[0].text;
+      return this.introduction;
+    } catch (error) {
+      console.error(`Error generating introduction for ${this.name}:`, error.message);
+      this.introduction = `Hello, I'm ${this.name}. [Error generating introduction: ${error.message}]`;
+      return this.introduction;
+    }
   }
 
   /**
@@ -101,6 +119,15 @@ class Agent {
         ]
       });
       
+      // Better error handling for response structure
+      if (!response || !response.content || !response.content.length) {
+        throw new Error('Empty response received from API');
+      }
+      
+      if (!response.content[0] || typeof response.content[0].text !== 'string') {
+        throw new Error('Invalid response format from API');
+      }
+      
       // Extract just the number from the response
       const urgencyText = response.content[0].text.trim();
       let urgency = parseFloat(urgencyText) || 3.0;
@@ -136,15 +163,20 @@ class Agent {
       You are participating in a meeting with other AI agents. Respond in a way that's consistent with your persona.
       Keep your responses concise and to the point, focused on adding value to the discussion.
       
-      Reply as if you are speaking in a real meeting - use natural language, don't be robotic.
+      IMPORTANT GUIDELINES:
+      1. You must speak ONLY as ${this.name} - do not respond on behalf of other meeting participants.
+      2. Keep your response BRIEF - no more than 2-3 short paragraphs maximum.
+      3. Be focused and direct - make your point clearly without rambling.
+      4. Reply as if you are speaking in a real meeting - use natural language, don't be robotic.
     `;
     
     // Format conversation for the API
     const formattedMessages = conversation.map(message => {
       if (message.role === 'assistant' && message.agentId) {
+        // Keep person's name but don't include agentId to avoid confusion
         return { 
           role: 'assistant', 
-          content: `${message.agentId}: ${message.content}`
+          content: message.content
         };
       } else {
         return { 
@@ -162,6 +194,15 @@ class Agent {
         messages: formattedMessages
       });
       
+      // Better error handling for response structure
+      if (!response || !response.content || !response.content.length) {
+        throw new Error('Empty response received from API');
+      }
+      
+      if (!response.content[0] || typeof response.content[0].text !== 'string') {
+        throw new Error('Invalid response format from API');
+      }
+      
       return response.content[0].text;
     } catch (error) {
       console.error(`Error generating response for ${this.name}:`, error.message);
@@ -174,7 +215,11 @@ class Agent {
    * @param {string} content - Message content
    */
   printMessage(content) {
-    const formattedMessage = chalk[this.color](`${this.name}: ${content}`);
+    // Use role directly or default to "Moderator" for the moderator
+    const roleTitle = this.role || (this.agentId === 'moderator' ? 'Moderator' : this.agentId);
+    
+    // Format as "Name [Role]: Message"
+    const formattedMessage = chalk[this.color](`${this.name} [${roleTitle}]: ${content}`);
     console.log(formattedMessage);
     console.log(); // Add a blank line for readability
   }
@@ -204,7 +249,8 @@ class ModeratorAgent extends Agent {
       agentId: 'moderator',
       name: 'Meeting Moderator',
       persona: 'Professional meeting facilitator who ensures discussions stay on track and all voices are heard',
-      color: 'cyan',
+      role: 'Moderator',
+      color: 'whiteBright',
       client,
       lowEndModel,
       highEndModel
