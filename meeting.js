@@ -57,7 +57,8 @@ class MeetingSimulator {
       agenda: this.agenda,
       availablePersonas: this.availablePersonas,
       lowEndModel: this.lowEndModel,
-      highEndModel: this.highEndModel
+      highEndModel: this.highEndModel,
+      meetingPurpose: this.meetingPurpose
     });
     
     // Select and initialize participating agents
@@ -102,7 +103,17 @@ class MeetingSimulator {
    * @param {string} agentId - Agent ID for assistant messages
    */
   _addMessage(role, content, agentId = null) {
-    const message = createMessage(role, content, agentId);
+    let agentName = null;
+    let agentRole = null;
+    
+    // If this is an agent message, include name and role
+    if (role === 'assistant' && agentId && this.agents[agentId]) {
+      const agent = this.agents[agentId];
+      agentName = agent.name;
+      agentRole = agent.role;
+    }
+    
+    const message = createMessage(role, content, agentId, agentName, agentRole);
     this.conversation.push(message);
     
     // Increment messagesSinceLastSpoken for all agents except the one speaking

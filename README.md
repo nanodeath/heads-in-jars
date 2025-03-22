@@ -41,10 +41,21 @@ Start the application:
 npm start
 ```
 
+You can also specify an agenda file:
+
+```
+npm start -- --agenda-file=sample-agenda.txt
+```
+
+The agenda file should be formatted as:
+- First line: Meeting purpose/topic
+- Subsequent lines: Agenda items (one per line)
+- Empty lines are ignored
+
 Follow the interactive prompts to:
 1. Select your involvement level
 2. Choose models for low and high-end operations
-3. Enter a meeting purpose and agenda items
+3. Enter a meeting purpose and agenda items (if not loaded from file)
 4. Participate in the meeting
 
 During the meeting:
@@ -55,6 +66,12 @@ During the meeting:
 
 ## Configuration
 
+### Command-line Options
+- `--validate`: Run in validation mode (checks imports and exits)
+- `--debug`: Run in debug mode (shows additional debug information)
+- `--agenda-file=path/to/file.txt`: Load meeting purpose and agenda from a file
+
+### Customization
 You can customize:
 - User involvement level (none, low, high)
 - Models used for low-end and high-end operations

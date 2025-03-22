@@ -237,18 +237,28 @@ Based on this context, how urgently do you need to speak (1-5)?
       Keep your responses concise and to the point, focused on adding value to the discussion.
       
       Rules:
-      1. You must speak ONLY as ${this.name} - DO NOT respond on behalf of other meeting participants.
+      1. You must speak ONLY as ${this.name} - DO NOT respond on behalf of other meeting participants. DO NOT include your name or role in your response.
       2. Keep your response BRIEF - no more than 2-3 short paragraphs maximum.
       3. Be focused and direct - make your point clearly without rambling.
-      4. Reply as if you are speaking in a real meeting - use natural language, don't be robotic.
+      4. Use natural language, don't be robotic.
+      5. Don't fabricate historical data or user studies.
     `;
     
     // Format conversation for the API
     const formattedMessages = conversation.map(message => {
-      // Other agents are the "user" to keep the agent from confusing identity.
+      // Create prefix with agent name and role if available
+      let messagePrefix = '';
+      if (message.agentName && message.agentRole) {
+        messagePrefix = `${message.agentName} [${message.agentRole}]: `;
+      } else if (message.agentId) {
+        // Fall back to just the agent ID if name/role not available
+        messagePrefix = `${message.agentId}: `;
+      }
+      
+      // Other agents are the "user" to keep the agent from confusing identity
       return { 
         role: message.agentId === this.agentId ? 'assistant' : 'user',
-        content: (message.agentId ? `${message.agentId}: ` : '') + message.content
+        content: messagePrefix + message.content
       };
     });
     
@@ -308,8 +318,19 @@ Based on this context, how urgently do you need to speak (1-5)?
     // Use role directly or default to "Moderator" for the moderator
     const roleTitle = this.role || (this.agentId === 'moderator' ? 'Moderator' : this.agentId);
     
-    // Format as "Name [Role]: Message"
-    const formattedMessage = chalk[this.color](`${this.name} [${roleTitle}]: ${content}`);
+    // Check if the content already starts with agent name and role
+    const nameRolePrefix = `${this.name} [${roleTitle}]: `;
+    
+    // Format the message properly - avoid duplication if the prefix already exists
+    let formattedMessage;
+    if (content.startsWith(nameRolePrefix)) {
+      // Content already has the prefix, just use it directly
+      formattedMessage = chalk[this.color](content);
+    } else {
+      // Add the prefix
+      formattedMessage = chalk[this.color](`${nameRolePrefix}${content}`);
+    }
+    
     console.log(formattedMessage);
     console.log(); // Add a blank line for readability
   }
@@ -327,13 +348,15 @@ class ModeratorAgent extends Agent {
    * @param {Object} options.availablePersonas - Available personas for the meeting
    * @param {string} options.lowEndModel - Model to use for urgency calculations
    * @param {string} options.highEndModel - Model to use for main responses
+   * @param {string} options.meetingPurpose - Purpose of the meeting
    */
   constructor({
     client,
     agenda,
     availablePersonas,
     lowEndModel = 'claude-3-haiku-20240307',
-    highEndModel = 'claude-3-opus-20240229'
+    highEndModel = 'claude-3-opus-20240229',
+    meetingPurpose = 'Weekly team meeting'
   }) {
     super({
       agentId: 'moderator',
@@ -350,6 +373,7 @@ class ModeratorAgent extends Agent {
     this.currentAgendaItem = 0;
     this.availablePersonas = availablePersonas;
     this.selectedPersonas = {};
+    this.meetingPurpose = meetingPurpose;
   }
 
   /**
@@ -455,13 +479,18 @@ class ModeratorAgent extends Agent {
     const systemPrompt = `
       You are the meeting moderator starting a meeting.
       
+      Meeting purpose: "${this.meetingPurpose}"
+      
       The full agenda is:
       ${JSON.stringify(this.agenda, null, 2)}
       
-      Write a short introduction welcoming everyone to the meeting, explaining the purpose,
-      and introducing the first agenda item: "${this.agenda[0]}"
+      Write a short introduction that:
+      1. Welcomes everyone to the meeting
+      2. Clearly states the purpose of the meeting: "${this.meetingPurpose}"
+      3. Summarizes the overall agenda structure
+      4. Introduces the first agenda item: "${this.agenda[0]}"
       
-      Keep it concise and professional.
+      Keep it concise, professional, and energetic.
     `;
     
     const response = await this.client.messages.create({

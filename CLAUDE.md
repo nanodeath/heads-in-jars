@@ -2,6 +2,8 @@
 
 ## Commands
 - Run app: `npm start`
+- Run with agenda file: `npm start -- --agenda-file=path/to/file.txt`
+- Run in debug mode: `npm start -- --debug`
 - Validate code: `npm run validate`
 - Direct validation: `node index.js --validate`
 - Run Python version: `python meetings.py`

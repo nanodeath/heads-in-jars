@@ -3,13 +3,17 @@
  * @param {string} role - Message role ('user' or 'assistant')
  * @param {string} content - Message content
  * @param {string|null} agentId - Agent ID for assistant messages
+ * @param {string|null} agentName - Agent name for assistant messages
+ * @param {string|null} agentRole - Agent role for assistant messages
  * @returns {Object} Message object
  */
-export function createMessage(role, content, agentId = null) {
+export function createMessage(role, content, agentId = null, agentName = null, agentRole = null) {
     return {
       role,
       content,
       agentId,
+      agentName,
+      agentRole,
       timestamp: Date.now()
     };
   }

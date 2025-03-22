@@ -7,13 +7,19 @@ import enquirer from 'enquirer';
 const { Confirm, Input, Select, Form, MultiSelect } = enquirer;
 import ora from 'ora';
 import logUpdate from 'log-update';
+import fs from 'fs';
+import path from 'path';
 
 // Load environment variables
 config();
 
-// Check for validation and debug modes
+// Check for command line arguments
 const isValidationMode = process.argv.includes('--validate');
 const isDebugMode = process.argv.includes('--debug');
+
+// Check for agenda file argument
+const agendaFileArg = process.argv.find(arg => arg.startsWith('--agenda-file='));
+const agendaFilePath = agendaFileArg ? agendaFileArg.split('=')[1] : null;
 
 // Set debug mode globally so it can be accessed from any module
 global.isDebugMode = isDebugMode;
@@ -23,6 +29,44 @@ import { Agent, ModeratorAgent } from './agents.js';
 import { MeetingSimulator } from './meeting.js';
 import { availablePersonas } from './personas.js';
 import { createMessage, sleep, formatDuration, truncateText, containsAny, generateId, debugLog, calculateCost } from './utils.js';
+
+/**
+ * Read and parse an agenda file
+ * @param {string} filePath - Path to the agenda file
+ * @returns {Object} Object containing meetingPurpose and agenda
+ */
+function readAgendaFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      console.error(chalk.red(`Error: Agenda file not found at ${filePath}`));
+      return null;
+    }
+
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const lines = fileContent.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    if (lines.length === 0) {
+      console.error(chalk.red('Error: Agenda file is empty'));
+      return null;
+    }
+    
+    // First line is the meeting purpose
+    const meetingPurpose = lines[0];
+    
+    // Remaining lines are agenda items
+    const agenda = lines.slice(1);
+    
+    if (agenda.length === 0) {
+      console.log(chalk.yellow('Warning: No agenda items found in file. Using default agenda.'));
+      agenda.push('Project status updates', 'Technical challenges', 'Next steps');
+    }
+    
+    return { meetingPurpose, agenda };
+  } catch (error) {
+    console.error(chalk.red(`Error reading agenda file: ${error.message}`));
+    return null;
+  }
+}
 
 // Validate all imports
 function validateImports() {
@@ -46,6 +90,9 @@ function validateImports() {
   
   // Validate meeting simulator
   console.log('✓ meeting.js: MeetingSimulator');
+  
+  // Validate file handling
+  console.log('✓ fs: File system module for agenda file reading');
   
   console.log(chalk.green('All modules imported successfully!'));
   return true;
@@ -113,47 +160,71 @@ async function main() {
       ]
     }).run();
     
-    // Get meeting purpose
-    const meetingPurpose = await new Input({
-      name: 'purpose',
-      message: 'Enter a brief description of the meeting purpose:',
-      initial: 'Weekly project status and planning'
-    }).run();
+    // Get meeting purpose and agenda items (either from file or user input)
+    let meetingPurpose;
+    let agenda = [];
     
-    // Get agenda items
-    console.log(chalk.yellow('\nEnter agenda items (leave blank when done):'));
-    
-    const agenda = [];
-    let itemNumber = 1;
-    
-    // Set initial agenda item suggestion
-    let initialValue = 'Project status updates';
-    
-    while (true) {
-      const agendaItem = await new Input({
-        name: 'item',
-        message: `Agenda item #${itemNumber}:`,
-        initial: initialValue,
-        hint: itemNumber === 1 ? '(press Enter to submit, leave blank when finished)' : '(leave blank when finished)'
-      }).run();
+    // If an agenda file was provided, read it
+    if (agendaFilePath) {
+      debugLog(`Reading agenda from file: ${agendaFilePath}`);
+      const fileData = readAgendaFile(agendaFilePath);
       
-      // Clear the initial value after first item
-      initialValue = '';
-      
-      // If blank item, break the loop
-      if (!agendaItem.trim()) {
-        break;
+      if (fileData) {
+        meetingPurpose = fileData.meetingPurpose;
+        agenda = fileData.agenda;
+        
+        console.log(chalk.green(`Loaded meeting purpose: ${meetingPurpose}`));
+        console.log(chalk.green(`Loaded ${agenda.length} agenda items from file`));
+      } else {
+        console.log(chalk.red('Failed to load agenda from file. Falling back to manual input.'));
+        // Continue with manual input below
       }
-      
-      // Add item and increment counter
-      agenda.push(agendaItem);
-      itemNumber++;
     }
     
-    // If no agenda items were added, use default ones
+    // If we didn't get meeting purpose from file, ask the user
+    if (!meetingPurpose) {
+      meetingPurpose = await new Input({
+        name: 'purpose',
+        message: 'Enter a brief description of the meeting purpose:',
+        initial: 'Weekly project status and planning'
+      }).run();
+    }
+    
+    // If we didn't get agenda from file, ask the user
     if (agenda.length === 0) {
-      console.log(chalk.yellow('No agenda items provided. Using default agenda.'));
-      agenda.push('Project status updates', 'Technical challenges', 'Next steps');
+      console.log(chalk.yellow('\nEnter agenda items (leave blank when done):'));
+      
+      let itemNumber = 1;
+      
+      // Set initial agenda item suggestion
+      let initialValue = 'Project status updates';
+      
+      while (true) {
+        const agendaItem = await new Input({
+          name: 'item',
+          message: `Agenda item #${itemNumber}:`,
+          initial: initialValue,
+          hint: itemNumber === 1 ? '(press Enter to submit, leave blank when finished)' : '(leave blank when finished)'
+        }).run();
+        
+        // Clear the initial value after first item
+        initialValue = '';
+        
+        // If blank item, break the loop
+        if (!agendaItem.trim()) {
+          break;
+        }
+        
+        // Add item and increment counter
+        agenda.push(agendaItem);
+        itemNumber++;
+      }
+      
+      // If no agenda items were added, use default ones
+      if (agenda.length === 0) {
+        console.log(chalk.yellow('No agenda items provided. Using default agenda.'));
+        agenda.push('Project status updates', 'Technical challenges', 'Next steps');
+      }
     }
     
     // Initialize the meeting simulator
