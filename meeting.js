@@ -195,9 +195,10 @@ class MeetingSimulator {
       }
       
       if (userTurn) {
+        console.log(chalk.cyan('\n🎯 Your turn to speak:'));
         const userInput = await new Input({
           name: 'input',
-          message: chalk.white.bold('You:'),
+          message: chalk.cyanBright.bold('💬 You:'),
           initial: '',
         }).run();
         
@@ -233,30 +234,88 @@ class MeetingSimulator {
         // Calculate urgency scores for each agent
         const recentMessages = this._getRecentMessages(10);
         const urgencyScores = {};
-        const urgencySpinner = ora('Agents considering responses...').start();
         
         debugLog('Calculating urgency scores for all participants');
         
         // Get current agenda item
         const currentAgendaItem = this.agenda[this.moderator.currentAgendaItem];
         
+        // Get list of participating agents (excluding moderator)
+        const participantAgentIds = Object.keys(this.agents).filter(id => id !== 'moderator');
+        
+        // Create a tracking object for agent thinking status
+        const thinkingStatus = {};
+        participantAgentIds.forEach(id => {
+          thinkingStatus[id] = "thinking"; // "thinking" or "done"
+        });
+        
+        // Helper to format the status line
+        const formatStatusLine = () => {
+          return `Who's next: ${participantAgentIds.map(id => {
+            const agent = this.agents[id];
+            const status = thinkingStatus[id] === "thinking" ? "🔄" : "✅";
+            return `${agent.name} ${status}`;
+          }).join(' | ')}`;
+        };
+        
+        // Create a single spinner
+        const spinner = ora({
+          text: formatStatusLine(),
+          color: 'cyan'
+        }).start();
+        
         // Collect all urgency calculation promises
         const urgencyPromises = [];
-        for (const [agentId, agent] of Object.entries(this.agents)) {
-          if (agentId !== 'moderator') {
-            const promise = agent.calculateUrgency(recentMessages, currentAgendaItem)
-              .then(urgency => {
-                urgencyScores[agentId] = urgency;
-                return { agentId, urgency };
-              });
-            urgencyPromises.push(promise);
-          }
+        for (const agentId of participantAgentIds) {
+          const agent = this.agents[agentId];
+          const promise = agent.calculateUrgency(recentMessages, currentAgendaItem)
+            .then(urgency => {
+              urgencyScores[agentId] = urgency;
+              thinkingStatus[agentId] = "done"; // Mark as done
+              spinner.text = formatStatusLine(); // Update spinner text
+              return { agentId, urgency };
+            });
+          urgencyPromises.push(promise);
         }
         
         // Wait for all urgency calculations to complete
-        const urgencyResults = await Promise.all(urgencyPromises);
+        await Promise.all(urgencyPromises);
         
-        urgencySpinner.stop();
+        // Let moderator choose next speaker, influenced by urgency scores
+        const nextSpeakerSuggestions = Object.entries(urgencyScores)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3); // Top 3 most urgent
+        
+        let nextSpeaker;
+        let speakerSelectionReason;
+        
+        if (Math.random() < 0.7 && nextSpeakerSuggestions.length > 0) {
+          // 70% chance to pick from top urgent speakers
+          nextSpeaker = nextSpeakerSuggestions[0][0];
+          speakerSelectionReason = "highest urgency score";
+        } else {
+          // 30% chance to let moderator decide completely
+          nextSpeaker = await this.moderator.chooseNextSpeaker(this.agents, this.conversation);
+          speakerSelectionReason = "moderator selection";
+        }
+        
+        // Get the selected agent
+        const selectedAgent = this.agents[nextSpeaker];
+        
+        // Update spinner to show final state with speaker having raised hand
+        spinner.text = `Who's next: ${participantAgentIds.map(id => {
+          const agent = this.agents[id];
+          let status = "✅";
+          if (id === nextSpeaker) status = "✋"; // Speaker gets hand emoji
+          return `${agent.name} ${status}`;
+        }).join(' | ')}`;
+        
+        // Brief pause to see final state
+        await new Promise(resolve => setTimeout(resolve, 800));
+        spinner.succeed();
+        
+        // Log selection reason only in debug mode
+        debugLog(`Selected next speaker: ${selectedAgent.name} (${speakerSelectionReason})`);
         
         // Display urgency scores in debug mode
         if (global.isDebugMode) {
@@ -277,26 +336,7 @@ class MeetingSimulator {
           console.log(chalk.gray('====================='));
         }
         
-        // Let moderator choose next speaker, influenced by urgency scores
-        const nextSpeakerSuggestions = Object.entries(urgencyScores)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3); // Top 3 most urgent
-        
-        let nextSpeaker;
-        let speakerSelectionReason;
-        
-        if (Math.random() < 0.7 && nextSpeakerSuggestions.length > 0) {
-          // 70% chance to pick from top urgent speakers
-          nextSpeaker = nextSpeakerSuggestions[0][0];
-          speakerSelectionReason = "highest urgency score";
-        } else {
-          // 30% chance to let moderator decide completely
-          nextSpeaker = await this.moderator.chooseNextSpeaker(this.agents, this.conversation);
-          speakerSelectionReason = "moderator selection";
-        }
-        
-        // Log how the next speaker was selected
-        debugLog(`Selected next speaker: ${this.agents[nextSpeaker].name} (${speakerSelectionReason})`);
+        // Next speaker has already been chosen in the spinner section
         
         
         // Generate the chosen agent's response with interruption possibility
@@ -315,12 +355,15 @@ class MeetingSimulator {
         const sigintHandler = () => {
           interrupted = true;
           responseSpinner.stop();
-          console.log(chalk.yellow('\nInterrupted! Your turn to speak.'));
+          console.log(chalk.yellowBright('\n🙋 You raised your hand to interrupt!'));
         };
         process.on('SIGINT', sigintHandler);
         
-        // Start the spinner with interrupt message
-        const responseSpinner = ora(`${agent.name} is thinking...press ^C to interrupt.`).start();
+        // Spinner for the speaking agent with interrupt instructions
+        const responseSpinner = ora({
+          text: `✋ ${agent.name} is composing a response... (Press Ctrl+C to interrupt)`,
+          color: agent.color.replace('Bright', '') || 'white',
+        }).start();
         
         // Log that we're generating a response
         debugLog(`Generating response for ${agent.name} [${agent.role}]`);
@@ -344,7 +387,7 @@ class MeetingSimulator {
           // User interrupted, let them speak
           const userInput = await new Input({
             name: 'input',
-            message: chalk.white.bold('You:'),
+            message: chalk.yellowBright.bold('🙋‍♂️ You:'),
             initial: '',
           }).run();
           

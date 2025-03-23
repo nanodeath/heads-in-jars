@@ -30,6 +30,9 @@ import { MeetingSimulator } from './meeting.js';
 import { availablePersonas } from './personas.js';
 import { createMessage, sleep, formatDuration, truncateText, containsAny, generateId, debugLog, calculateCost } from './utils.js';
 
+const defaultLowEndModel = 'claude-3-5-haiku-latest';
+const defaultHighEndModel = 'claude-3-5-haiku-latest'; // 'claude-3-7-sonnet-latest'
+
 /**
  * Read and parse an agenda file
  * @param {string} filePath - Path to the agenda file
@@ -155,8 +158,8 @@ async function main() {
       name: 'models',
       message: 'Select Claude models to use (or press Enter for defaults):',
       choices: [
-        { name: 'lowEndModel', message: 'Low-end model (for urgency)', initial: 'claude-3-5-haiku-latest' },
-        { name: 'highEndModel', message: 'High-end model (for responses)', initial: 'claude-3-7-sonnet-latest' }
+        { name: 'lowEndModel', message: 'Low-end model (for urgency)', initial: defaultLowEndModel },
+        { name: 'highEndModel', message: 'High-end model (for responses)', initial: defaultHighEndModel }
       ]
     }).run();
     
