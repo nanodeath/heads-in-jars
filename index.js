@@ -337,7 +337,18 @@ async function main() {
     }).run();
     
     if (saveTranscript) {
-      const filename = `meeting-transcript-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      // Get the current date in YYYY-MM-DD format
+      const currentDate = new Date().toISOString().split('T')[0];
+      
+      // Create a slug from the meeting purpose (lowercase, remove special chars, replace spaces with hyphens)
+      const topicSlug = meetingPurpose.toLowerCase()
+        .replace(/[^\w\s-]/g, '')  // Remove special characters
+        .replace(/\s+/g, '-')      // Replace spaces with hyphens
+        .substring(0, 50);         // Limit length to avoid overly long filenames
+      
+      // Construct filename with date and topic
+      const filename = `meeting-${currentDate}-${topicSlug}.json`;
+      
       simulator.saveTranscript(filename);
       console.log(chalk.green(`Transcript saved to ${filename}`));
     }
