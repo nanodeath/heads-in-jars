@@ -36,6 +36,10 @@ class MeetingSimulator {
     this.meetingPurpose = meetingPurpose;
     this.conversation = [];
     
+    // Meeting state management
+    this.meetingPhase = 'setup'; // Possible values: setup, introductions, discussion, conclusion
+    this.lastNonModeratorSpeaker = null;
+    
     // Import personas from the external module
     this.availablePersonas = {};
     this.agents = {};
@@ -199,6 +203,10 @@ class MeetingSimulator {
    * @returns {Promise<void>}
    */
   async introduceParticipants() {
+    // Update meeting phase to introductions
+    this.meetingPhase = 'introductions';
+    debugLog(`Meeting phase changed to: ${this.meetingPhase}`);
+    
     console.log(chalk.white.bold('=== Meeting Participants ===\n'));
     
     // Introduce moderator first
@@ -211,6 +219,8 @@ class MeetingSimulator {
       if (agentId !== 'moderator') {
         agent.printMessage(agent.introduction);
         this._addMessage('assistant', agent.introduction, agentId);
+        // Store the last speaker but don't enforce consecutive speaking rule during introductions
+        this.lastNonModeratorSpeaker = agentId;
       }
     }
   }
@@ -220,10 +230,16 @@ class MeetingSimulator {
    * @returns {Promise<void>}
    */
   async runMeeting() {
-    // Start the meeting
+    // Start the meeting - transitions from introductions to discussion phase
     const startMessage = await this.moderator.startMeeting();
     this.moderator.printMessage(startMessage);
     this._addMessage('assistant', startMessage, 'moderator');
+    
+    // Update meeting phase to discussion
+    this.meetingPhase = 'discussion';
+    debugLog(`Meeting phase changed to: ${this.meetingPhase}`);
+    // Clear the last speaker at the start of the discussion phase
+    this.lastNonModeratorSpeaker = null;
     
     let meetingActive = true;
     let turnsSinceUserInput = 0;
@@ -294,7 +310,9 @@ class MeetingSimulator {
             this.moderator.printMessage(conclusionMessage);
             this._addMessage('assistant', conclusionMessage, 'moderator');
             
-            // Mark meeting as inactive and exit the loop
+            // Update meeting phase and mark as inactive
+            this.meetingPhase = 'conclusion';
+            debugLog(`Meeting phase changed to: ${this.meetingPhase}`);
             meetingActive = false;
             console.log(chalk.cyan('\n=== Meeting Adjourned ===\n'));
             break;
@@ -324,53 +342,42 @@ class MeetingSimulator {
         // Get list of participating agents (excluding moderator)
         const participantAgentIds = Object.keys(this.agents).filter(id => id !== 'moderator');
         
-        // Determine who was the last agent to speak (to prevent back-to-back turns)
-        let lastSpeakerId = null;
+        // Check if the last message was from a user
         let lastMessageWasUserInput = false;
-        let inIntroductionPhase = true; // Assume we're in intro phase until we find a non-introduction message
-        
-        for (let i = this.conversation.length - 1; i >= 0; i--) {
-          const message = this.conversation[i];
-          
-          // Check if the last message was from the user
-          if (i === this.conversation.length - 1 && message.role === 'user') {
+        if (this.conversation.length > 0) {
+          const lastMessage = this.conversation[this.conversation.length - 1];
+          if (lastMessage.role === 'user') {
             lastMessageWasUserInput = true;
-            break; // Allow anyone to respond to user input
-          }
-          
-          if (message.role === 'assistant') {
-            // Check if we've moved beyond introductions
-            // Introductions typically don't have specific agenda discussion
-            if (message.agentId === 'moderator' && 
-                (message.content.includes("Let's begin with our first agenda item") || 
-                 message.content.includes("Our first agenda item"))) {
-              inIntroductionPhase = false;
-            }
-            
-            if (message.agentId !== 'moderator' && !inIntroductionPhase) {
-              lastSpeakerId = message.agentId;
-              break;
-            }
+            debugLog(`Last message was from user - anyone can speak next`);
           }
         }
         
-        // Add debug information about the speaking context
-        if (lastMessageWasUserInput) {
-          debugLog(`Last message was from user - anyone can speak next`);
-          lastSpeakerId = null; // Clear last speaker to allow anyone to respond
-        } else if (inIntroductionPhase) {
-          debugLog(`Still in introduction phase - consecutive speaking allowed`);
-          lastSpeakerId = null; // Allow consecutive speaking during introductions
+        // Log meeting phase and last speaker for debugging
+        debugLog(`Current meeting phase: ${this.meetingPhase}`);
+        if (this.lastNonModeratorSpeaker) {
+          debugLog(`Last non-moderator speaker: ${this.agents[this.lastNonModeratorSpeaker].name}`);
         } else {
-          debugLog(`Last speaker was: ${lastSpeakerId ? this.agents[lastSpeakerId].name : 'none (or during transition)'}`);
+          debugLog(`No previous non-moderator speaker recorded yet`);
+        }
+        
+        // Determine who cannot speak based on meeting phase and last speaker
+        let restrictedSpeakerId = null;
+        
+        // Only apply the consecutive speaker restriction during the discussion phase
+        // and when the last message wasn't from a user
+        if (this.meetingPhase === 'discussion' && !lastMessageWasUserInput && this.lastNonModeratorSpeaker) {
+          restrictedSpeakerId = this.lastNonModeratorSpeaker;
+          debugLog(`Restricting ${this.agents[restrictedSpeakerId].name} from speaking consecutively`);
+        } else {
+          debugLog(`No speaker restrictions currently active`);
         }
         
         // Create a tracking object for agent thinking status
         const thinkingStatus = {};
         participantAgentIds.forEach(id => {
-          // If this is the last speaker, mark them as "zipped" (can't speak again)
+          // If this is the restricted speaker, mark them as "zipped" (can't speak again)
           // Otherwise mark as "thinking" initially
-          thinkingStatus[id] = (id === lastSpeakerId) ? "zipped" : "thinking";
+          thinkingStatus[id] = (id === restrictedSpeakerId) ? "zipped" : "thinking";
         });
         
         // Helper to format the status line
@@ -398,8 +405,8 @@ class MeetingSimulator {
         // Collect all urgency calculation promises
         const urgencyPromises = [];
         for (const agentId of participantAgentIds) {
-          // Skip urgency calculation for last speaker (they can't speak again immediately)
-          if (agentId === lastSpeakerId) {
+          // Skip urgency calculation for restricted speaker (they can't speak again immediately)
+          if (agentId === restrictedSpeakerId) {
             urgencyScores[agentId] = 0; // Assign zero urgency
             continue; // Skip to next agent
           }
@@ -419,9 +426,9 @@ class MeetingSimulator {
         await Promise.all(urgencyPromises);
         
         // Let moderator choose next speaker, influenced by urgency scores
-        // Filter out the last speaker (who has zero urgency)
+        // Filter out the restricted speaker (who has zero urgency)
         const eligibleSpeakers = Object.entries(urgencyScores)
-          .filter(([agentId, score]) => agentId !== lastSpeakerId)
+          .filter(([agentId, score]) => agentId !== restrictedSpeakerId)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3); // Top 3 most urgent
         
@@ -433,9 +440,9 @@ class MeetingSimulator {
           nextSpeaker = eligibleSpeakers[0][0];
           speakerSelectionReason = "highest urgency score";
         } else {
-          // 30% chance to let moderator decide, but ensure we pass lastSpeakerId
+          // 30% chance to let moderator decide, but ensure we pass restrictedSpeakerId
           // so the moderator knows not to pick them again
-          nextSpeaker = await this.moderator.chooseNextSpeaker(this.agents, this.conversation, lastSpeakerId);
+          nextSpeaker = await this.moderator.chooseNextSpeaker(this.agents, this.conversation, restrictedSpeakerId);
           speakerSelectionReason = "moderator selection";
         }
         
@@ -449,8 +456,8 @@ class MeetingSimulator {
           
           if (id === nextSpeaker) {
             status = "✋"; // Next speaker gets raised hand emoji
-          } else if (id === lastSpeakerId) {
-            status = "🤐"; // Last speaker keeps zipper-mouth face
+          } else if (id === restrictedSpeakerId) {
+            status = "🤐"; // Restricted speaker keeps zipper-mouth face
           } else {
             status = "✅"; // Others show completion checkmark
           }
@@ -530,12 +537,19 @@ class MeetingSimulator {
           responseSpinner.stop();
           agent.printMessage(response);
           this._addMessage('assistant', response, nextSpeaker);
+          
+          // Update last non-moderator speaker for the next round
+          if (nextSpeaker !== 'moderator') {
+            this.lastNonModeratorSpeaker = nextSpeaker;
+            debugLog(`Updated last non-moderator speaker to: ${this.agents[nextSpeaker].name}`);
+          }
+          
           turnsSinceUserInput += 1;
         } else {
           // User interrupted, let them speak
           const userInput = await new Input({
             name: 'input',
-            message: chalk.yellowBright.bold('🙋‍♂️ You:'),
+            message: chalk.yellowBright.bold('🙋 You:'),
             initial: '',
           }).run();
           
@@ -555,7 +569,9 @@ class MeetingSimulator {
             this.moderator.printMessage(endMessage);
             this._addMessage('assistant', endMessage, 'moderator');
             
-            // Mark meeting as inactive and exit the loop on next iteration
+            // Update meeting phase and mark as inactive
+            this.meetingPhase = 'conclusion';
+            debugLog(`Meeting phase changed to: ${this.meetingPhase}`);
             meetingActive = false;
             console.log(chalk.cyan('\n=== Meeting Adjourned ===\n'));
           } else {
