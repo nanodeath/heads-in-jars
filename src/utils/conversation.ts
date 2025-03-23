@@ -2,26 +2,26 @@
  * Conversation-related utilities
  */
 
-import type { Message, MessageRole } from "../types.js";
+import type { Message, MessageRole } from '../types.js';
 
 /**
  * Create a message object for the conversation
  */
 export function createMessage(
-	role: MessageRole,
-	content: string,
-	agentId: string | null = null,
-	agentName: string | null = null,
-	agentRole: string | null = null,
+  role: MessageRole,
+  content: string,
+  agentId: string | null = null,
+  agentName: string | null = null,
+  agentRole: string | null = null,
 ): Message {
-	return {
-		role,
-		content,
-		agentId,
-		agentName,
-		agentRole,
-		timestamp: Date.now(),
-	};
+  return {
+    role,
+    content,
+    agentId,
+    agentName,
+    agentRole,
+    timestamp: Date.now(),
+  };
 }
 
 /**
@@ -32,28 +32,24 @@ export function createMessage(
  * @param role The agent's role
  * @returns The cleaned text
  */
-export function removeNamePrefix(
-	text: string,
-	name: string,
-	role: string,
-): string {
-	// Common patterns of the agent referring to themselves
-	const selfReferencePatterns = [
-		`${name}: `,
-		`${name} [${role}]: `,
-		`${name}[${role}]: `,
-		`${name}[${role}]:`,
-		`${name} [${role}]:`,
-		`${name}, ${role}: `,
-	];
+export function removeNamePrefix(text: string, name: string, role: string): string {
+  // Common patterns of the agent referring to themselves
+  const selfReferencePatterns = [
+    `${name}: `,
+    `${name} [${role}]: `,
+    `${name}[${role}]: `,
+    `${name}[${role}]:`,
+    `${name} [${role}]:`,
+    `${name}, ${role}: `,
+  ];
 
-	// Find and remove any self-reference prefix
-	for (const pattern of selfReferencePatterns) {
-		if (text.startsWith(pattern)) {
-			return text.substring(pattern.length);
-		}
-	}
+  // Find and remove any self-reference prefix
+  for (const pattern of selfReferencePatterns) {
+    if (text.startsWith(pattern)) {
+      return text.substring(pattern.length);
+    }
+  }
 
-	// Return original text if no patterns match
-	return text;
+  // Return original text if no patterns match
+  return text;
 }

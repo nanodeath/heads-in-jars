@@ -2,7 +2,7 @@
  * Spinner and progress indicators
  */
 
-import ora, { type Ora } from "ora";
+import ora, { type Color, type Ora } from 'ora';
 
 /**
  * Create a spinner with a given message
@@ -11,11 +11,11 @@ import ora, { type Ora } from "ora";
  * @param color Optional color for the spinner
  * @returns Ora spinner instance
  */
-export function createSpinner(message: string, color?: string): Ora {
-	return ora({
-		text: message,
-		color: (color || "cyan") as any,
-	});
+export function createSpinner(message: string, color?: Color): Ora {
+  return ora({
+    text: message,
+    color: color || 'cyan',
+  });
 }
 
 /**
@@ -25,16 +25,13 @@ export function createSpinner(message: string, color?: string): Ora {
  * @param agents Map of agent objects with names and other properties
  * @returns Ora spinner instance
  */
-export function createThinkingSpinner(
-	statuses: Record<string, string>,
-	agents: Record<string, { name: string }>,
-): Ora {
-	const statusLine = formatStatusLine(statuses, agents);
+export function createThinkingSpinner(statuses: Record<string, string>, agents: Record<string, { name: string }>): Ora {
+  const statusLine = formatStatusLine(statuses, agents);
 
-	return ora({
-		text: statusLine,
-		color: "cyan",
-	});
+  return ora({
+    text: statusLine,
+    color: 'cyan',
+  });
 }
 
 /**
@@ -44,32 +41,29 @@ export function createThinkingSpinner(
  * @param agents Map of agent objects with names
  * @returns Formatted status line
  */
-export function formatStatusLine(
-	statuses: Record<string, string>,
-	agents: Record<string, { name: string }>,
-): string {
-	const statusItems = Object.entries(statuses).map(([agentId, status]) => {
-		const agent = agents[agentId];
-		let emoji;
+export function formatStatusLine(statuses: Record<string, string>, agents: Record<string, { name: string }>): string {
+  const statusItems = Object.entries(statuses).map(([agentId, status]) => {
+    const agent = agents[agentId];
+    let emoji: string;
 
-		switch (status) {
-			case "zipped":
-				emoji = "🤐"; // Zipper-mouth face for last speaker
-				break;
-			case "thinking":
-				emoji = "🔄"; // Thinking
-				break;
-			case "next":
-				emoji = "✋"; // Next speaker gets raised hand emoji
-				break;
-			default:
-				emoji = "✅"; // Finished thinking
-		}
+    switch (status) {
+      case 'zipped':
+        emoji = '🤐'; // Zipper-mouth face for last speaker
+        break;
+      case 'thinking':
+        emoji = '🔄'; // Thinking
+        break;
+      case 'next':
+        emoji = '✋'; // Next speaker gets raised hand emoji
+        break;
+      default:
+        emoji = '✅'; // Finished thinking
+    }
 
-		return `${agent.name} ${emoji}`;
-	});
+    return `${agent.name} ${emoji}`;
+  });
 
-	return `Who's next: ${statusItems.join(" | ")}`;
+  return `Who's next: ${statusItems.join(' | ')}`;
 }
 
 /**
@@ -81,21 +75,21 @@ export function formatStatusLine(
  * @param nextSpeakerId The ID of the next speaker
  */
 export function updateSpinnerWithNextSpeaker(
-	spinner: Ora,
-	statuses: Record<string, string>,
-	agents: Record<string, { name: string }>,
-	nextSpeakerId: string,
+  spinner: Ora,
+  statuses: Record<string, string>,
+  agents: Record<string, { name: string }>,
+  nextSpeakerId: string,
 ): void {
-	// Update statuses to mark the next speaker
-	const updatedStatuses = { ...statuses };
+  // Update statuses to mark the next speaker
+  const updatedStatuses = { ...statuses };
 
-	// Mark the next speaker with hand raised
-	Object.keys(updatedStatuses).forEach((id) => {
-		if (id === nextSpeakerId) {
-			updatedStatuses[id] = "next";
-		}
-	});
+  // Mark the next speaker with hand raised
+  for (const id of Object.keys(updatedStatuses)) {
+    if (id === nextSpeakerId) {
+      updatedStatuses[id] = 'next';
+    }
+  }
 
-	// Update spinner text
-	spinner.text = formatStatusLine(updatedStatuses, agents);
+  // Update spinner text
+  spinner.text = formatStatusLine(updatedStatuses, agents);
 }
