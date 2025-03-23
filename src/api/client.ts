@@ -3,6 +3,7 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
+import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { TokenUsage } from '../types.js';
 import { debugLog } from '../utils/formatting.js';
 import { withRetryLogic } from '../utils/retries.js';
@@ -22,12 +23,12 @@ export interface MessageParams {
   model: string;
   max_tokens: number;
   system: string;
-  messages: Array<{ role: string; content: string }>;
-  stream?: boolean;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  stream: boolean;
 }
 
 /**
- * Creates a message using the Claude API
+ * Creates a non-streaming message using the Claude API
  *
  * @param client The Anthropic client
  * @param params Message creation parameters
@@ -37,7 +38,7 @@ export interface MessageParams {
  */
 export async function createMessage(
   client: Anthropic,
-  params: MessageParams,
+  params: MessageParams & { stream: false },
   actionDescription: string,
   fallbackMessage?: string,
 ): Promise<MessageResponse> {

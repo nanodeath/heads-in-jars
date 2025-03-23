@@ -3,6 +3,7 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
+import type { MessageCreateParamsStreaming } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { TokenUsage } from '../types.js';
 import { removeNamePrefix } from '../utils/conversation.js';
 import { debugLog } from '../utils/formatting.js';
@@ -20,14 +21,11 @@ import type { MessageParams } from './client.js';
  */
 export async function createStreamingMessage(
   client: Anthropic,
-  params: MessageParams,
+  params: MessageParams & { stream: true },
   onChunk: (chunk: string) => void,
   agentName: string,
   agentRole: string,
 ): Promise<string> {
-  // Ensure streaming is enabled
-  params.stream = true;
-
   let fullResponse = '';
 
   try {

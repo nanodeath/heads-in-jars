@@ -238,7 +238,7 @@ export class MeetingSimulator {
           // Generate the introduction with streaming
           const intro = await createStreamingMessage(
             agent.client,
-            messageParams,
+            { ...messageParams, stream: true },
             streamCallback,
             agent.name,
             agent.role,

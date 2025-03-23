@@ -90,11 +90,12 @@ export class Agent {
         max_tokens: 150,
         system: systemPrompt,
         messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
+        stream: false,
       };
 
       const response = await createMessage(
         this.client,
-        messageParams,
+        { ...messageParams, stream: false },
         `generating introduction for ${this.name}`,
         `Hello, I'm ${this.name}. [Error generating introduction]`,
       );
@@ -168,11 +169,12 @@ Based on this context, how urgently do you need to speak (1-5)?
         max_tokens: 10,
         system: systemPrompt,
         messages: [{ role: 'user', content: userContent }],
+        stream: false,
       };
 
       const response = await createMessage(
         this.client,
-        messageParams,
+        { ...messageParams, stream: false },
         `calculating urgency for ${this.name}`,
         '3', // Default medium urgency
       );
@@ -230,7 +232,7 @@ Based on this context, how urgently do you need to speak (1-5)?
     const systemPrompt = createResponsePrompt(this.name, this.persona, this.role);
 
     // Format conversation for the API
-    const formattedMessages = conversation.map((message) => {
+    const formattedMessages: MessageParams['messages'] = conversation.map((message) => {
       // Create prefix with agent name and role if available
       let messagePrefix = '';
       if (message.agentName && message.agentRole) {
@@ -260,18 +262,28 @@ Based on this context, how urgently do you need to speak (1-5)?
       max_tokens: this.maxTokens,
       system: systemPrompt,
       messages: formattedMessages,
+      stream: false,
     };
 
     try {
       // Use streaming or standard API call based on whether a callback was provided
       if (onStream) {
         // Use streaming API for real-time output
-        return await createStreamingMessage(this.client, messageParams, onStream, this.name, this.role);
+        return await createStreamingMessage(
+          this.client,
+          {
+            ...messageParams,
+            stream: true,
+          },
+          onStream,
+          this.name,
+          this.role,
+        );
       }
       // Use non-streaming API call
       const response = await createMessage(
         this.client,
-        messageParams,
+        { ...messageParams, stream: false },
         `generating response for ${this.name}`,
         `I'd like to share my thoughts on this, but I'm having technical difficulty at the moment.`,
       );

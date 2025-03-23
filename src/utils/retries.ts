@@ -11,7 +11,7 @@ import { sleep } from './time.js';
 export async function withRetryLogic<T>(
   apiCall: () => Promise<T>,
   actionDescription: string,
-  options: RetryOptions = {},
+  options: RetryOptions<T> = {},
 ): Promise<T> {
   const retryDelay = options.retryDelay || 10000; // Default to 10 seconds
   const maxRetries = 1; // Try at most once more

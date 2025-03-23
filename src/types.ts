@@ -48,10 +48,10 @@ export interface CostEstimate {
 }
 
 // Options for withRetryLogic
-export interface RetryOptions {
+export interface RetryOptions<T> {
   retryDelay?: number;
   onRetry?: (error: Error) => void;
-  fallbackFn?: <T>(error: Error) => Promise<T>;
+  fallbackFn?: (error: Error) => Promise<T>;
 }
 
 // API Error with status

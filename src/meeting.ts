@@ -530,9 +530,8 @@ export class MeetingSimulator {
         process.on('SIGINT', sigintHandler);
 
         // Spinner for the speaking agent with interrupt instructions
-        const spinnerColor = agent.color.bold;
         const responseSpinner = ora({
-          text: `✋ ${spinnerColor(agent.name)} is composing a response... (^C to interrupt)`,
+          text: `✋ ${agent.color.bold(agent.name)} is composing a response... (^C to interrupt)`,
         }).start();
 
         // Log that we're generating a response

@@ -111,7 +111,7 @@ function validateImports(): boolean {
     persona: 'Test persona',
     role: 'Dev',
     color: chalk.blue,
-    client: null,
+    client: new Anthropic(),
   });
   console.log('✓ agents.ts: Agent, ModeratorAgent');
 

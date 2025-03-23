@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import type { MessageParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import chalk, { type ChalkInstance } from 'chalk';
 import type { AgentOptions, Message, ModeratorOptions, PersonaDirectory, PersonaInfo, TokenUsage } from './types.js';
 import { calculateCost, withRetryLogic } from './utils.js';
@@ -287,7 +288,7 @@ Based on this context, how urgently do you need to speak (1-5)?
       return {
         role: message.agentId === this.agentId ? 'assistant' : 'user',
         content: messagePrefix + message.content,
-      };
+      } satisfies MessageParam;
     });
 
     // Log the request in debug mode

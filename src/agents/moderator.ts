@@ -161,11 +161,12 @@ export class ModeratorAgent extends Agent {
       max_tokens: 300,
       system: systemPrompt,
       messages: [{ role: 'user', content: 'Please start the meeting.' }],
+      stream: false,
     };
 
     const response = await createMessage(
       this.client,
-      messageParams,
+      { ...messageParams, stream: false },
       'starting meeting',
       `Welcome everyone to our meeting on ${this.meetingPurpose}. Let's get started with our first agenda item: ${this.agenda[0]}.`,
     );
