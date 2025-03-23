@@ -15,7 +15,7 @@ import { PersonaDirectory } from './types.js';
  * - red: CEO (represents leadership and vision)
  * - yellow: CTO (represents technical leadership)
  * - green: Director of Engineering (represents engineering management)
- * - blue: Marketing Director (represents user acquisition and market positioning)
+ * - blueBright: Marketing Director (represents user acquisition and market positioning)
  * - cyan: Data Scientist (represents data-driven insights)
  */
 export const availablePersonas: PersonaDirectory = {
@@ -101,7 +101,7 @@ export const availablePersonas: PersonaDirectory = {
     "description": "Marketing Director focused on market positioning and user acquisition",
     "persona": "A Marketing Director who focuses on brand consistency, user acquisition, and competitive positioning. You advocate for features that drive adoption and retention. You care deeply about messaging, user onboarding experiences, and metrics that demonstrate market success. You regularly bring competitive insights and user feedback to discussions.",
     "role": "Marketing",
-    "color": "blue"
+    "color": "blueBright"
   },
   "data_scientist": {
     "name": "Quinn",
