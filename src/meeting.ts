@@ -538,8 +538,28 @@ export class MeetingSimulator {
         // Log that we're generating a response
         debugLog(`Generating response for ${agent.name} [${agent.role}]`);
         
-        // Start response generation as a separate promise we can handle
-        const responsePromise = agent.generateResponse(this.conversation);
+        // Variable to store the full response
+        let fullResponse = '';
+        
+        // Flag to track if we've received the first chunk
+        let receivedFirstChunk = false;
+        
+        // Define a streaming callback function that will be called for each chunk
+        const streamCallback = (chunk: string) => {
+          // If this is the first chunk, stop the spinner and start streaming
+          if (!receivedFirstChunk) {
+            responseSpinner.stop();
+            receivedFirstChunk = true;
+            // Print first chunk with the agent's name and role prefix
+            agent.printMessage(chunk, true, true);
+          } else {
+            // Print subsequent chunks without the prefix
+            agent.printMessage(chunk, true, false);
+          }
+        };
+        
+        // Start response generation with streaming
+        const responsePromise = agent.generateResponse(this.conversation, streamCallback);
         
         // Wait for either response completion or interruption
         const response = await responsePromise.catch(error => {
@@ -549,8 +569,17 @@ export class MeetingSimulator {
         
         // Only proceed with displaying the response if not interrupted
         if (!interrupted) {
-          responseSpinner.stop();
-          agent.printMessage(response);
+          // If we didn't receive any chunks yet (possibly API didn't stream), 
+          // or if streaming failed, display the response normally
+          if (!receivedFirstChunk) {
+            responseSpinner.stop();
+            agent.printMessage(response);
+          } else {
+            // If we were streaming, complete the message
+            agent.completeStreamedMessage();
+          }
+          
+          // Add the message to the conversation
           this._addMessage('assistant', response, nextSpeaker);
           
           // Update last non-moderator speaker for the next round

@@ -265,7 +265,7 @@ Based on this context, how urgently do you need to speak (1-5)?
   /**
    * Generate a response based on the conversation context
    */
-  async generateResponse(conversation: Message[]): Promise<string> {
+  async generateResponse(conversation: Message[], onStream?: (chunk: string) => void): Promise<string> {
     // Reset the count of messages since last spoken
     this.messagesSinceLastSpoken = 0;
     
@@ -311,65 +311,121 @@ Based on this context, how urgently do you need to speak (1-5)?
     });
     
     try {
-      // Use retry logic with user prompt fallback for response generation
-      const response = await withRetryLogic(
-        // API call function
-        async () => {
-          const res = await this.client.messages.create({
+      // Use streaming or standard API call based on whether a callback was provided
+      if (onStream) {
+        // Use streaming API for real-time output
+        let fullResponse = '';
+        
+        try {
+          // Create streaming request
+          const stream = await this.client.messages.create({
             model: this.highEndModel,
             max_tokens: this.maxTokens,
             system: systemPrompt,
-            messages: formattedMessages
+            messages: formattedMessages,
+            stream: true
           });
           
-          // Check response validity
-          if (!res || !res.content || !res.content.length) {
-            throw new Error('Empty response received from API');
+          // Process each chunk as it arrives
+          for await (const messageStreamEvent of stream) {
+            if (messageStreamEvent.type === 'content_block_delta' && 
+                messageStreamEvent.delta?.text) {
+              const chunk = messageStreamEvent.delta.text;
+              fullResponse += chunk;
+              onStream(chunk);
+            }
           }
           
-          if (!res.content[0] || typeof res.content[0].text !== 'string') {
-            throw new Error('Invalid response format from API');
-          }
+          // Calculate approximate token usage for logging purposes
+          // This is an approximation since we don't get actual token counts with streaming
+          const approximateUsage = {
+            input_tokens: formattedMessages.reduce((acc, msg) => acc + msg.content.length / 4, 0),
+            output_tokens: fullResponse.length / 4
+          } as TokenUsage;
           
-          return res;
-        },
-        // Description
-        `generating response for ${this.name}`,
-        // Options
-        {
-          fallbackFn: async (error) => {
-            // Prompt the user for input
-            console.log(chalk.red(`\n⚠️ API error when generating response for ${this.name}: ${error.message}`));
-            
-            // Create a fallback response that explains the issue
-            const fallbackMessage = `I'd like to share my thoughts on this, but I'm having technical difficulty connecting to the API at the moment. Let's continue the discussion and I'll try again shortly.`;
-            
-            return { 
-              content: [{ text: fallbackMessage }],
-              usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 } as TokenUsage
-            };
-          }
+          // Log the response in debug mode
+          debugLog(`Streaming response for ${this.name} completed`, {
+            content: fullResponse,
+            approximateUsage
+          });
+          
+          // Calculate and log approximate cost estimate
+          const costEstimate = calculateCost(this.highEndModel, approximateUsage);
+          debugLog(`💰 Approximate cost estimate for ${this.name} streaming response:`, {
+            model: this.highEndModel,
+            inputTokens: costEstimate.inputTokens,
+            outputTokens: costEstimate.outputTokens,
+            inputCost: `$${costEstimate.inputCost}`,
+            outputCost: `$${costEstimate.outputCost}`,
+            totalCost: `$${costEstimate.totalCost}`
+          });
+          
+          return fullResponse;
+        } catch (error: any) {
+          console.error(`Error generating streaming response for ${this.name}:`, error.message);
+          return `[Error generating response: ${error.message}]`;
         }
-      );
-      
-      // Log the response in debug mode
-      debugLog(`Response API response for ${this.name}`, {
-        content: response.content[0].text,
-        usage: response.usage
-      });
-      
-      // Calculate and log cost estimate
-      const costEstimate = calculateCost(this.highEndModel, response.usage);
-      debugLog(`💰 Cost estimate for ${this.name} response generation:`, {
-        model: this.highEndModel,
-        inputTokens: costEstimate.inputTokens,
-        outputTokens: costEstimate.outputTokens,
-        inputCost: `$${costEstimate.inputCost}`,
-        outputCost: `$${costEstimate.outputCost}`,
-        totalCost: `$${costEstimate.totalCost}`
-      });
-      
-      return response.content[0].text;
+      } else {
+        // Use non-streaming API with retry logic for non-streamed responses
+        const response = await withRetryLogic(
+          // API call function
+          async () => {
+            const res = await this.client.messages.create({
+              model: this.highEndModel,
+              max_tokens: this.maxTokens,
+              system: systemPrompt,
+              messages: formattedMessages
+            });
+            
+            // Check response validity
+            if (!res || !res.content || !res.content.length) {
+              throw new Error('Empty response received from API');
+            }
+            
+            if (!res.content[0] || typeof res.content[0].text !== 'string') {
+              throw new Error('Invalid response format from API');
+            }
+            
+            return res;
+          },
+          // Description
+          `generating response for ${this.name}`,
+          // Options
+          {
+            fallbackFn: async (error) => {
+              // Prompt the user for input
+              console.log(chalk.red(`\n⚠️ API error when generating response for ${this.name}: ${error.message}`));
+              
+              // Create a fallback response that explains the issue
+              const fallbackMessage = `I'd like to share my thoughts on this, but I'm having technical difficulty connecting to the API at the moment. Let's continue the discussion and I'll try again shortly.`;
+              
+              return { 
+                content: [{ text: fallbackMessage }],
+                usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 } as TokenUsage
+              };
+            }
+          }
+        );
+        
+        // Log the response in debug mode
+        debugLog(`Response API response for ${this.name}`, {
+          content: response.content[0].text,
+          usage: response.usage
+        });
+        
+        // Calculate and log cost estimate
+        const costEstimate = calculateCost(this.highEndModel, response.usage);
+        debugLog(`💰 Cost estimate for ${this.name} response generation:`, {
+          model: this.highEndModel,
+          inputTokens: costEstimate.inputTokens,
+          outputTokens: costEstimate.outputTokens,
+          inputCost: `$${costEstimate.inputCost}`,
+          outputCost: `$${costEstimate.outputCost}`,
+          totalCost: `$${costEstimate.totalCost}`
+        });
+        
+        return response.content[0].text;
+      }
     } catch (error: any) {
       console.error(`Error generating response for ${this.name}:`, error.message);
       return `[Error generating response: ${error.message}]`;
@@ -378,29 +434,50 @@ Based on this context, how urgently do you need to speak (1-5)?
 
   /**
    * Print a message from this agent with appropriate formatting
+   * @param content The message content to print
+   * @param streaming Whether this is a streaming chunk (default: false)
+   * @param isFirstChunk Whether this is the first chunk in a stream (default: false)
    */
-  printMessage(content: string): void {
+  printMessage(content: string, streaming: boolean = false, isFirstChunk: boolean = false): void {
     // Use role directly or default to "Moderator" for the moderator
     const roleTitle = this.role || (this.agentId === 'moderator' ? 'Moderator' : this.agentId);
     
     // Check if the content already starts with agent name and role
     const nameRolePrefix = `${this.name} [${roleTitle}]: `;
     
-    // Format the message properly - avoid duplication if the prefix already exists
-    let formattedMessage;
     // Handle chalk color safely with a type assertion
     const chalkColor = (chalk as any)[this.color];
     
-    if (content.startsWith(nameRolePrefix)) {
-      // Content already has the prefix, just use it directly
-      formattedMessage = chalkColor(content);
+    if (streaming) {
+      // For streaming output, handle differently based on whether it's the first chunk or not
+      if (isFirstChunk) {
+        // For the first chunk, print the prefix
+        process.stdout.write(chalkColor(nameRolePrefix + content));
+      } else {
+        // For subsequent chunks, just print the content in the same color
+        process.stdout.write(chalkColor(content));
+      }
     } else {
-      // Add the prefix
-      formattedMessage = chalkColor(`${nameRolePrefix}${content}`);
+      // For non-streaming output, format the message properly
+      let formattedMessage;
+      if (content.startsWith(nameRolePrefix)) {
+        // Content already has the prefix, just use it directly
+        formattedMessage = chalkColor(content);
+      } else {
+        // Add the prefix
+        formattedMessage = chalkColor(`${nameRolePrefix}${content}`);
+      }
+      
+      console.log(formattedMessage);
+      console.log(); // Add a blank line for readability
     }
-    
-    console.log(formattedMessage);
-    console.log(); // Add a blank line for readability
+  }
+  
+  /**
+   * Completes a streamed message by adding a blank line
+   */
+  completeStreamedMessage(): void {
+    console.log("\n"); // Add two blank lines for readability after a streamed message
   }
 }
 
