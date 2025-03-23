@@ -606,9 +606,10 @@ class ModeratorAgent extends Agent {
    * Decide which agent should speak next
    * @param {Object} agents - Available agents
    * @param {Array} conversation - Conversation history
+   * @param {string|null} lastSpeakerId - ID of the agent who spoke last (to avoid back-to-back turns)
    * @returns {Promise<string>} ID of the next speaker
    */
-  async chooseNextSpeaker(agents, conversation) {
+  async chooseNextSpeaker(agents, conversation, lastSpeakerId = null) {
     const systemPrompt = `
       You are the meeting moderator deciding who should speak next.
       
@@ -619,6 +620,7 @@ class ModeratorAgent extends Agent {
       - Who has relevant expertise for the current topic
       - Who hasn't spoken recently and might have valuable input
       - The natural flow of conversation
+      ${lastSpeakerId ? `- Do NOT select ${agents[lastSpeakerId].name} who just spoke` : ''}
       
       Return ONLY the ID of the agent who should speak next, nothing else.
     `;
@@ -627,6 +629,24 @@ class ModeratorAgent extends Agent {
     const recentMessages = conversation.slice(-Math.min(10, conversation.length));
     
     try {
+      // If we have a lastSpeakerId, create available participants excluding that agent
+      const availableParticipants = {};
+      for (const [id, agent] of Object.entries(agents)) {
+        if (id !== 'moderator' && id !== lastSpeakerId) {
+          availableParticipants[id] = agent.name;
+        }
+      }
+      
+      // If we somehow have no available participants (shouldn't happen), return random
+      if (Object.keys(availableParticipants).length === 0) {
+        const agentIds = Object.keys(agents).filter(id => id !== 'moderator' && id !== lastSpeakerId);
+        if (agentIds.length === 0) {
+          // Fallback if we somehow have only the moderator and last speaker
+          return Object.keys(agents).filter(id => id !== 'moderator')[0];
+        }
+        return agentIds[Math.floor(Math.random() * agentIds.length)];
+      }
+      
       const response = await this.client.messages.create({
         model: this.lowEndModel,
         max_tokens: 50,
@@ -642,9 +662,7 @@ class ModeratorAgent extends Agent {
               })), null, 2)}
               
               Available participants:
-              ${JSON.stringify(Object.fromEntries(
-                Object.entries(agents).map(([id, agent]) => [id, agent.name])
-              ), null, 2)}
+              ${JSON.stringify(availableParticipants, null, 2)}
               
               Who should speak next? Respond with only their agent_id.
             `
@@ -663,19 +681,36 @@ class ModeratorAgent extends Agent {
         }
       }
       
+      // Make sure we didn't select the lastSpeakerId
+      if (nextSpeaker === lastSpeakerId) {
+        // If somehow the model returned the last speaker, select someone else
+        const eligibleAgents = Object.keys(agents).filter(id => 
+          id !== 'moderator' && id !== lastSpeakerId
+        );
+        nextSpeaker = eligibleAgents[Math.floor(Math.random() * eligibleAgents.length)];
+      }
+      
       if (agents[nextSpeaker]) {
         return nextSpeaker;
       } else {
-        // Fallback: choose someone who hasn't spoken recently
-        const agentIds = Object.keys(agents).filter(id => id !== 'moderator');
+        // Fallback: choose someone who hasn't spoken recently and is not the last speaker
+        const agentIds = Object.keys(agents).filter(id => 
+          id !== 'moderator' && id !== lastSpeakerId
+        );
         return agentIds[Math.floor(Math.random() * agentIds.length)];
       }
       
     } catch (error) {
       console.error('Error choosing next speaker:', error.message);
       
-      // Random fallback
-      const agentIds = Object.keys(agents).filter(id => id !== 'moderator');
+      // Random fallback avoiding the last speaker
+      const agentIds = Object.keys(agents).filter(id => 
+        id !== 'moderator' && id !== lastSpeakerId
+      );
+      if (agentIds.length === 0) {
+        // If we have no eligible agents (shouldn't happen), just pick any non-moderator
+        return Object.keys(agents).filter(id => id !== 'moderator')[0];
+      }
       return agentIds[Math.floor(Math.random() * agentIds.length)];
     }
   }

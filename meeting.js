@@ -203,10 +203,21 @@ class MeetingSimulator {
         }).run();
         
         if (['exit', 'quit', 'end meeting'].includes(userInput.toLowerCase())) {
-          console.log(chalk.white.bold('\n=== Ending Meeting Early ===\n'));
+          console.log(chalk.cyan('\n=== Ending Meeting Early ===\n'));
+          const conclusionSpinner = ora({
+            text: 'The moderator is preparing meeting summary...',
+            color: 'cyan'
+          }).start();
+          
+          // Generate the meeting conclusion
           const endMessage = await this.moderator.endMeeting(this.conversation);
+          
+          // Stop spinner and display conclusion
+          conclusionSpinner.succeed('Meeting summary ready');
+          console.log(); // Add an empty line for spacing
           this.moderator.printMessage(endMessage);
           this._addMessage('assistant', endMessage, 'moderator');
+          meetingActive = false; // Ensure the meeting loop exits
           break;
         }
         
@@ -220,7 +231,23 @@ class MeetingSimulator {
           const nextItem = await this.moderator.nextAgendaItem(this.conversation);
           
           if (nextItem === null) {
-            // End of meeting
+            // End of meeting - show feedback with spinner
+            console.log(chalk.cyan('\n=== Concluding Meeting ===\n'));
+            const conclusionSpinner = ora({
+              text: 'The moderator is preparing meeting summary...',
+              color: 'cyan'
+            }).start();
+            
+            // Generate the meeting conclusion
+            const conclusionMessage = await this.moderator.endMeeting(this.conversation);
+            
+            // Stop spinner and display conclusion
+            conclusionSpinner.succeed('Meeting summary ready');
+            console.log(); // Add an empty line for spacing
+            this.moderator.printMessage(conclusionMessage);
+            this._addMessage('assistant', conclusionMessage, 'moderator');
+            
+            // Mark meeting as inactive
             meetingActive = false;
             break;
           }
@@ -243,17 +270,38 @@ class MeetingSimulator {
         // Get list of participating agents (excluding moderator)
         const participantAgentIds = Object.keys(this.agents).filter(id => id !== 'moderator');
         
+        // Determine who was the last agent to speak (to prevent back-to-back turns)
+        let lastSpeakerId = null;
+        for (let i = this.conversation.length - 1; i >= 0; i--) {
+          const message = this.conversation[i];
+          if (message.role === 'assistant' && message.agentId !== 'moderator') {
+            lastSpeakerId = message.agentId;
+            break;
+          }
+        }
+        
+        debugLog(`Last speaker was: ${lastSpeakerId ? this.agents[lastSpeakerId].name : 'none'}`);
+        
         // Create a tracking object for agent thinking status
         const thinkingStatus = {};
         participantAgentIds.forEach(id => {
-          thinkingStatus[id] = "thinking"; // "thinking" or "done"
+          // If this is the last speaker, mark them as "zipped" (can't speak again)
+          // Otherwise mark as "thinking" initially
+          thinkingStatus[id] = (id === lastSpeakerId) ? "zipped" : "thinking";
         });
         
         // Helper to format the status line
         const formatStatusLine = () => {
           return `Who's next: ${participantAgentIds.map(id => {
             const agent = this.agents[id];
-            const status = thinkingStatus[id] === "thinking" ? "🔄" : "✅";
+            let status;
+            if (thinkingStatus[id] === "zipped") {
+              status = "🤐"; // Zipper-mouth face for last speaker
+            } else if (thinkingStatus[id] === "thinking") {
+              status = "🔄"; // Thinking
+            } else {
+              status = "✅"; // Finished thinking
+            }
             return `${agent.name} ${status}`;
           }).join(' | ')}`;
         };
@@ -267,6 +315,12 @@ class MeetingSimulator {
         // Collect all urgency calculation promises
         const urgencyPromises = [];
         for (const agentId of participantAgentIds) {
+          // Skip urgency calculation for last speaker (they can't speak again immediately)
+          if (agentId === lastSpeakerId) {
+            urgencyScores[agentId] = 0; // Assign zero urgency
+            continue; // Skip to next agent
+          }
+          
           const agent = this.agents[agentId];
           const promise = agent.calculateUrgency(recentMessages, currentAgendaItem)
             .then(urgency => {
@@ -282,20 +336,23 @@ class MeetingSimulator {
         await Promise.all(urgencyPromises);
         
         // Let moderator choose next speaker, influenced by urgency scores
-        const nextSpeakerSuggestions = Object.entries(urgencyScores)
+        // Filter out the last speaker (who has zero urgency)
+        const eligibleSpeakers = Object.entries(urgencyScores)
+          .filter(([agentId, score]) => agentId !== lastSpeakerId)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3); // Top 3 most urgent
         
         let nextSpeaker;
         let speakerSelectionReason;
         
-        if (Math.random() < 0.7 && nextSpeakerSuggestions.length > 0) {
+        if (Math.random() < 0.7 && eligibleSpeakers.length > 0) {
           // 70% chance to pick from top urgent speakers
-          nextSpeaker = nextSpeakerSuggestions[0][0];
+          nextSpeaker = eligibleSpeakers[0][0];
           speakerSelectionReason = "highest urgency score";
         } else {
-          // 30% chance to let moderator decide completely
-          nextSpeaker = await this.moderator.chooseNextSpeaker(this.agents, this.conversation);
+          // 30% chance to let moderator decide, but ensure we pass lastSpeakerId
+          // so the moderator knows not to pick them again
+          nextSpeaker = await this.moderator.chooseNextSpeaker(this.agents, this.conversation, lastSpeakerId);
           speakerSelectionReason = "moderator selection";
         }
         
@@ -305,8 +362,16 @@ class MeetingSimulator {
         // Update spinner to show final state with speaker having raised hand
         spinner.text = `Who's next: ${participantAgentIds.map(id => {
           const agent = this.agents[id];
-          let status = "✅";
-          if (id === nextSpeaker) status = "✋"; // Speaker gets hand emoji
+          let status;
+          
+          if (id === nextSpeaker) {
+            status = "✋"; // Next speaker gets raised hand emoji
+          } else if (id === lastSpeakerId) {
+            status = "🤐"; // Last speaker keeps zipper-mouth face
+          } else {
+            status = "✅"; // Others show completion checkmark
+          }
+          
           return `${agent.name} ${status}`;
         }).join(' | ')}`;
         
@@ -392,8 +457,18 @@ class MeetingSimulator {
           }).run();
           
           if (['exit', 'quit', 'end meeting'].includes(userInput.toLowerCase())) {
-            console.log(chalk.white.bold('\n=== Ending Meeting Early ===\n'));
+            console.log(chalk.cyan('\n=== Ending Meeting Early ===\n'));
+            const conclusionSpinner = ora({
+              text: 'The moderator is preparing meeting summary...',
+              color: 'cyan'
+            }).start();
+            
+            // Generate the meeting conclusion
             const endMessage = await this.moderator.endMeeting(this.conversation);
+            
+            // Stop spinner and display conclusion
+            conclusionSpinner.succeed('Meeting summary ready');
+            console.log(); // Add an empty line for spacing
             this.moderator.printMessage(endMessage);
             this._addMessage('assistant', endMessage, 'moderator');
             meetingActive = false;
