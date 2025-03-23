@@ -346,11 +346,19 @@ async function main() {
         .replace(/\s+/g, '-')      // Replace spaces with hyphens
         .substring(0, 50);         // Limit length to avoid overly long filenames
       
-      // Construct filename with date and topic
-      const filename = `meeting-${currentDate}-${topicSlug}.json`;
+      // Construct filename with date and topic (using .md extension for markdown)
+      const filename = `meeting-${currentDate}-${topicSlug}.md`;
       
-      simulator.saveTranscript(filename);
-      console.log(chalk.green(`Transcript saved to ${filename}`));
+      console.log(chalk.cyan('\nGenerating meeting summary and transcript...'));
+      
+      // Create a spinner for the summary generation
+      const summarySpinner = ora('Generating meeting summary...').start();
+      
+      // Save transcript is now async because it generates a summary
+      await simulator.saveTranscript(filename);
+      
+      summarySpinner.succeed('Meeting summary and transcript generated!');
+      console.log(chalk.green(`\nTranscript saved to ${filename}`));
     }
     
     process.exit(0);

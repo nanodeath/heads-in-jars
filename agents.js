@@ -736,6 +736,88 @@ class ModeratorAgent extends Agent {
   }
 
   /**
+   * Generate a comprehensive meeting summary for the transcript
+   * @param {Array} conversation - Full conversation history
+   * @returns {Promise<string>} Detailed meeting summary
+   */
+  async generateMeetingSummary(conversation) {
+    const systemPrompt = `
+      You are the meeting moderator creating a detailed summary of a meeting that just concluded.
+      
+      The meeting purpose was: "${this.meetingPurpose}"
+      
+      The meeting agenda was:
+      ${JSON.stringify(this.agenda, null, 2)}
+      
+      Write a comprehensive but concise summary that includes:
+      1. Key points discussed for each agenda item
+      2. Important decisions that were made
+      3. Action items and who is responsible for them (if specified)
+      4. Any important questions that were raised and their answers
+      5. Any major challenges or disagreements that were discussed
+      6. Next steps for the team
+      
+      IMPORTANT FORMATTING RULES:
+      - DO NOT include a "Meeting Summary" heading - that will be added separately
+      - Use level 3 headings (###) for all section headers, not level 1 or 2
+      - Use bullet points for lists
+      - Keep the overall structure clean and consistent
+      
+      The summary should be thorough enough to be useful to someone who didn't attend.
+      Aim for 300-500 words.
+    `;
+    
+    // Get the entire conversation to summarize
+    // Use retry logic for meeting summary
+    const response = await withRetryLogic(
+      // API call function
+      async () => {
+        const res = await this.client.messages.create({
+          model: this.highEndModel,
+          max_tokens: 1000,
+          system: systemPrompt,
+          messages: [
+            { 
+              role: 'user', 
+              content: 'Full meeting transcript:\n' + 
+               conversation.map(m => `${m.agentId || 'User'}: ${m.content}`).join('\n')
+            }
+          ]
+        });
+        
+        // Check response validity
+        if (!res || !res.content || !res.content.length) {
+          throw new Error('Empty response received from API');
+        }
+        
+        if (!res.content[0] || typeof res.content[0].text !== 'string') {
+          throw new Error('Invalid response format from API');
+        }
+        
+        return res;
+      },
+      // Description
+      "generating detailed meeting summary",
+      // Options
+      {
+        fallbackFn: async (error) => {
+          // Create a generic summary as fallback
+          const fallbackMessage = `# Meeting Summary\n\nThis meeting covered our agenda items related to ${this.meetingPurpose}. The team discussed various perspectives and shared insights on each topic. Due to technical limitations, a detailed summary could not be generated, but the full transcript below captures all discussions that took place.`;
+          
+          console.log(chalk.yellow(`\n⚠️ Using fallback meeting summary due to API error: ${error.message}`));
+          
+          return { 
+            content: [{ text: fallbackMessage }],
+            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 }
+          };
+        }
+      }
+    );
+    
+    return response.content[0].text;
+  }
+
+  /**
    * Decide which agent should speak next
    * @param {Object} agents - Available agents
    * @param {Array} conversation - Conversation history

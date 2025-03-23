@@ -207,8 +207,6 @@ class MeetingSimulator {
     this.meetingPhase = 'introductions';
     debugLog(`Meeting phase changed to: ${this.meetingPhase}`);
     
-    console.log(chalk.white.bold('=== Meeting Participants ===\n'));
-    
     // Introduce moderator first
     const moderatorIntro = await this.moderator.generateIntroduction();
     this.moderator.printMessage(moderatorIntro);
@@ -593,31 +591,98 @@ class MeetingSimulator {
   }
 
   /**
-   * Save the meeting transcript to a file
+   * Save the meeting transcript to a Markdown file
    * @param {string} filename - Output filename
    */
-  saveTranscript(filename) {
-    const transcript = {
-      meetingPurpose: this.meetingPurpose,
-      agenda: this.agenda,
-      participants: Object.fromEntries(
-        Object.entries(this.agents).map(([id, agent]) => [
-          id, 
-          { 
-            name: agent.name, 
-            persona: agent.persona 
-          }
-        ])
-      ),
-      conversation: this.conversation.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-        agentId: msg.agentId,
-        timestamp: msg.timestamp
-      }))
-    };
+  async saveTranscript(filename) {
+    // First, generate a meeting summary using the moderator
+    let summary = await this.moderator.generateMeetingSummary(this.conversation);
     
-    fs.writeFileSync(filename, JSON.stringify(transcript, null, 2));
+    // Fix heading hierarchy in the summary
+    // Remove any top-level headings that duplicate "Meeting Summary"
+    summary = summary.replace(/^# Meeting Summary.*$/m, '');
+    
+    // Make sure all headings in the summary use proper hierarchy
+    // First, normalize all headings to their appropriate level under "Meeting Summary"
+    // Convert any h1 headings to h2
+    summary = summary.replace(/^# /gm, '## ');
+    
+    // Convert any h3 headings to h2 for consistency (h3 is too deep for main section headings)
+    summary = summary.replace(/^### /gm, '## ');
+    
+    // Make sure any h4+ headings are at most h3 level
+    summary = summary.replace(/^#{4,6} /gm, '### ');
+    
+    // Format the meeting date
+    const meetingDate = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric'
+    });
+    
+    // Create the markdown content
+    let markdown = '';
+    
+    // Add title and metadata
+    markdown += `# Meeting: ${this.meetingPurpose}\n\n`;
+    markdown += `**Date:** ${meetingDate}\n\n`;
+    
+    // Add participant list
+    markdown += `## Participants\n\n`;
+    for (const [agentId, agent] of Object.entries(this.agents)) {
+      if (agentId !== 'moderator') {
+        markdown += `- **${agent.name}** (${agent.role})\n`;
+      }
+    }
+    markdown += `- **${this.agents['moderator'].name}** (${this.agents['moderator'].role})\n\n`;
+    
+    // Add agenda
+    markdown += `## Agenda\n\n`;
+    this.agenda.forEach((item, i) => {
+      markdown += `${i+1}. ${item}\n`;
+    });
+    markdown += '\n';
+    
+    // Add summary with fixed heading hierarchy
+    markdown += `## Meeting Summary\n\n${summary}\n\n`;
+    
+    // Find the conclusion message if present (from meeting phase 'conclusion')
+    let conclusionMessage = '';
+    if (this.meetingPhase === 'conclusion') {
+      // Look for the last message from the moderator which should be the conclusion
+      for (let i = this.conversation.length - 1; i >= 0; i--) {
+        const msg = this.conversation[i];
+        if (msg.agentId === 'moderator') {
+          conclusionMessage = `## Conclusion\n\n${msg.content}\n\n`;
+          break;
+        }
+      }
+    }
+    
+    // Add the conclusion if available
+    if (conclusionMessage) {
+      markdown += conclusionMessage;
+    }
+    
+    // Add transcript
+    markdown += `## Transcript\n\n`;
+    this.conversation.forEach(msg => {
+      if (msg.role === 'assistant') {
+        // Format participant messages
+        markdown += `### ${msg.agentName} [${msg.agentRole}]:\n\n`;
+        markdown += `${msg.content}\n\n`;
+      } else if (msg.role === 'user') {
+        // Format user messages
+        markdown += `### User:\n\n${msg.content}\n\n`;
+      }
+    });
+    
+    // Write to file
+    fs.writeFileSync(filename, markdown);
+    
+    // Log success message (for debugging)
+    debugLog(`Saved transcript to ${filename}`);
   }
 }
 
