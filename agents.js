@@ -44,10 +44,20 @@ class Agent {
 
   /**
    * Generate an introduction for the agent
+   * @param {Function} statusCallback - Optional callback for status updates
    * @returns {Promise<string>} Introduction text
    */
-  async generateIntroduction() {
+  async generateIntroduction(statusCallback = null) {
+    // Helper function to update status if callback provided
+    const updateStatus = (message) => {
+      if (statusCallback && typeof statusCallback === 'function') {
+        statusCallback(message);
+      }
+    };
+    
     if (this.introduction) return this.introduction;
+    
+    updateStatus(`Generating introduction for ${this.name}...`);
     
     const systemPrompt = `
       You are ${this.name}, ${this.persona}
@@ -65,6 +75,7 @@ class Agent {
     });
     
     try {
+      updateStatus(`Contacting AI service for ${this.name}'s introduction...`);
       const response = await this.client.messages.create({
         model: this.lowEndModel,
         max_tokens: 150,
@@ -261,7 +272,9 @@ Based on this context, how urgently do you need to speak (1-5)?
       2. Keep your response BRIEF - no more than 2-3 short paragraphs maximum.
       3. Be focused and direct - make your point clearly without rambling.
       4. Use natural language, don't be robotic. Speak as if in an actual meeting.
-      5. Don't fabricate historical data or user studies.
+      5. IMPORTANT: DO NOT include narrative actions like "*listens intently*", "*nods thoughtfully*", "*thinks about it*", etc. Just speak directly without these narrative descriptors.
+      6. Don't fabricate historical data or user studies.
+      7. Focus on contributing substance to the discussion rather than social pleasantries.
     `;
     
     // Format conversation for the API
@@ -536,6 +549,8 @@ class ModeratorAgent extends Agent {
       4. Introduces the first agenda item: "${this.agenda[0]}"
       
       Keep it concise, professional, and energetic.
+      
+      IMPORTANT: DO NOT include narrative actions like "*looks around the room*", "*nods*", etc. Just speak directly without these narrative descriptors.
     `;
     
     const response = await this.client.messages.create({
@@ -559,7 +574,10 @@ class ModeratorAgent extends Agent {
   async nextAgendaItem(conversation) {
     this.currentAgendaItem += 1;
     if (this.currentAgendaItem >= this.agenda.length) {
-      return this.endMeeting(conversation);
+      // This will be ignored since we check for null return in meeting.js
+      // Keep it for backward compatibility if called directly
+      await this.endMeeting(conversation);
+      return null; // Signal that the meeting is over
     }
     
     // Get relevant messages for the current agenda item
@@ -590,6 +608,8 @@ class ModeratorAgent extends Agent {
       2. A short introduction to the next agenda item
       
       Keep it concise and professional.
+      
+      IMPORTANT: DO NOT include narrative actions like "*looks around the room*", "*nods*", etc. Just speak directly without these narrative descriptors.
     `;
     
     // Use retry logic for agenda item transition
@@ -659,6 +679,8 @@ class ModeratorAgent extends Agent {
       3. Thanks everyone for their participation
       
       Keep it professional and under 200 words.
+      
+      IMPORTANT: DO NOT include narrative actions like "*looks around the room*", "*nods*", etc. Just speak directly without these narrative descriptors.
     `;
     
     // Get the last portion of the conversation to summarize

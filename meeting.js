@@ -44,14 +44,26 @@ class MeetingSimulator {
 
   /**
    * Initialize the meeting simulator
+   * @param {Function} statusCallback - Callback function to update status
    * @returns {Promise<void>}
    */
-  async initialize() {
+  async initialize(statusCallback = null) {
+    // Helper function to update status if callback provided
+    const updateStatus = (message) => {
+      if (statusCallback && typeof statusCallback === 'function') {
+        statusCallback(message);
+      }
+    };
+    
     // Import personas dynamically to avoid circular dependencies
+    updateStatus('Loading personas library...');
+    await sleep(300); // Small pause to show status
     const { availablePersonas } = await import('./personas.js');
     this.availablePersonas = availablePersonas;
     
     // Initialize moderator
+    updateStatus('Initializing meeting moderator...');
+    await sleep(300); // Small pause to show status
     this.moderator = new ModeratorAgent({
       client: this.client,
       agenda: this.agenda,
@@ -62,22 +74,40 @@ class MeetingSimulator {
     });
     
     // Select and initialize participating agents
+    updateStatus('Selecting meeting participants based on topic...');
     const selectedPersonas = await this.moderator.selectParticipants();
+    const participantCount = Object.keys(selectedPersonas).length;
+    updateStatus(`Selected ${participantCount} participants for the meeting...`);
+    
+    updateStatus('Configuring participant personas and creating agent profiles...');
+    await sleep(300); // Small pause to show status
+    
+    // Pass the status update function to the agent initialization
     this.agents = await this._initializeAgents(selectedPersonas);
     
     // Add moderator to agents
+    updateStatus('Adding moderator to meeting roster...');
+    await sleep(300); // Small pause to show status
     this.agents['moderator'] = this.moderator;
+    
+    // Final setup
+    updateStatus('Preparing meeting context and history...');
   }
 
   /**
    * Initialize Agent objects for selected personas
    * @param {Object} selectedPersonas - Selected personas for the meeting
+   * @param {Function} statusCallback - Callback function to update status
    * @returns {Promise<Object>} Initialized agents
    */
   async _initializeAgents(selectedPersonas) {
     const agents = {};
+    const personaCount = Object.keys(selectedPersonas).length;
+    let currentPersona = 0;
     
     for (const [agentId, personaInfo] of Object.entries(selectedPersonas)) {
+      currentPersona++;
+      
       agents[agentId] = new Agent({
         agentId,
         name: personaInfo.name,
@@ -89,8 +119,13 @@ class MeetingSimulator {
         highEndModel: this.highEndModel
       });
       
-      // Pre-generate introductions
-      await agents[agentId].generateIntroduction();
+      // Update overall status via debugLog
+      debugLog(`Setting up ${personaInfo.name} [${personaInfo.role}] (${currentPersona}/${personaCount})`);
+      
+      // Pre-generate introductions with status updates
+      await agents[agentId].generateIntroduction((introStatus) => {
+        debugLog(`${personaInfo.name}: ${introStatus}`);
+      });
     }
     
     return agents;
@@ -217,13 +252,16 @@ class MeetingSimulator {
           console.log(); // Add an empty line for spacing
           this.moderator.printMessage(endMessage);
           this._addMessage('assistant', endMessage, 'moderator');
-          meetingActive = false; // Ensure the meeting loop exits
+          
+          // Mark meeting as inactive and exit the loop
+          meetingActive = false;
+          console.log(chalk.cyan('\n=== Meeting Adjourned ===\n'));
           break;
         }
         
         this._addMessage('user', userInput);
         turnsSinceUserInput = 0;
-      } else {
+      } else if (meetingActive) { // Check if the meeting is still active before proceeding
         // Check if we should move to the next agenda item
         const shouldMoveNext = await this.moderator.shouldMoveToNextAgendaItem(this.conversation);
         
@@ -247,8 +285,9 @@ class MeetingSimulator {
             this.moderator.printMessage(conclusionMessage);
             this._addMessage('assistant', conclusionMessage, 'moderator');
             
-            // Mark meeting as inactive
+            // Mark meeting as inactive and exit the loop
             meetingActive = false;
+            console.log(chalk.cyan('\n=== Meeting Adjourned ===\n'));
             break;
           }
           
@@ -256,6 +295,12 @@ class MeetingSimulator {
           this._addMessage('assistant', nextItem, 'moderator');
           turnsSinceUserInput += 1;
           continue;
+        }
+        
+        // Double-check that the meeting is still active before calculating urgencies
+        // This is a safety measure in case meetingActive was set to false elsewhere
+        if (!meetingActive) {
+          break;
         }
         
         // Calculate urgency scores for each agent
@@ -500,7 +545,10 @@ class MeetingSimulator {
             console.log(); // Add an empty line for spacing
             this.moderator.printMessage(endMessage);
             this._addMessage('assistant', endMessage, 'moderator');
+            
+            // Mark meeting as inactive and exit the loop on next iteration
             meetingActive = false;
+            console.log(chalk.cyan('\n=== Meeting Adjourned ===\n'));
           } else {
             this._addMessage('user', userInput);
             turnsSinceUserInput = 0;

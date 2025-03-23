@@ -233,7 +233,7 @@ async function main() {
     // Initialize the meeting simulator
     console.log(chalk.cyan('\nInitializing meeting simulator...'));
     
-    const spinner = ora('Setting up the meeting...').start();
+    const spinner = ora('Setting up the meeting environment...').start();
     
     const simulator = new MeetingSimulator({
       client,
@@ -244,23 +244,34 @@ async function main() {
       meetingPurpose
     });
     
-    // Wait for initialization to complete
-    await simulator.initialize();
+    // Wait for initialization to complete with detailed status updates
+    await simulator.initialize((statusMessage) => {
+      spinner.text = statusMessage;
+    });
+    
     spinner.succeed('Meeting setup complete!');
     
-    // Display meeting information
-    console.log(chalk.green('\n=== Meeting Information ==='));
-    console.log(chalk.white(`Topic: ${meetingPurpose}`));
-    console.log(chalk.white(`Agenda: ${agenda.join(', ')}`));
-    console.log(chalk.white(`Participants: ${Object.values(simulator.agents).map(a => a.name).join(', ')}`));
+    // Display meeting information in a more structured format
+    console.log(chalk.green('\n╭───────────────────────────────────────────────────╮'));
+    console.log(chalk.green('│              Meeting Information                  │'));
+    console.log(chalk.green('╰───────────────────────────────────────────────────╯'));
+    console.log(chalk.white(`📋 Topic: ${chalk.bold(meetingPurpose)}`));
+    console.log(chalk.white(`📑 Agenda: ${agenda.map((item, i) => chalk.bold(`${i+1}. ${item}`)).join('\n         ')}`));
+    console.log(chalk.white(`👥 Participants: ${Object.values(simulator.agents)
+      .filter(a => a.agentId !== 'moderator')
+      .map(a => chalk[a.color](a.name)).join(', ')}`));
     
-    // Start the meeting
-    console.log(chalk.green('\n=== Starting Meeting ===\n'));
+    // Start the meeting with a more visual separator
+    console.log(chalk.green('\n╭───────────────────────────────────────────────────╮'));
+    console.log(chalk.green('│                Meeting Starting                   │'));
+    console.log(chalk.green('╰───────────────────────────────────────────────────╯\n'));
     await simulator.introduceParticipants();
     await simulator.runMeeting();
     
-    // Meeting conclusion
-    console.log(chalk.green('\n=== Meeting Concluded ===\n'));
+    // Meeting conclusion with matching visual style
+    console.log(chalk.green('\n╭───────────────────────────────────────────────────╮'));
+    console.log(chalk.green('│               Meeting Concluded                   │'));
+    console.log(chalk.green('╰───────────────────────────────────────────────────╯\n'));
     
     // Ask if user wants to save the transcript
     const saveTranscript = await new Confirm({
