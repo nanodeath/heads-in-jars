@@ -20,3 +20,13 @@
 - **State Management**: Prefer class instances for stateful components
 - **API Client**: Initialize once and reuse the Anthropic client
 - **Async**: Use async/await for asynchronous operations
+
+## Git Commit Guidelines
+- Follow the [Conventional Commits](https://www.conventionalcommits.org/) standard:
+  - **Format**: `<type>(<scope>): <description>`
+  - **Types**: feat, fix, docs, style, refactor, test, chore
+  - **Examples**:
+    - `feat(ui): add agent status indicators`
+    - `fix(api): resolve rate limiting issue with retry logic`
+    - `docs(readme): update installation instructions`
+    - `refactor(agents): improve conversation handling`
