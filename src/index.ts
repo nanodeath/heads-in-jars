@@ -110,7 +110,7 @@ function validateImports(): boolean {
     name: 'Test Agent',
     persona: 'Test persona',
     role: 'Dev',
-    color: 'blue',
+    color: chalk.blue,
     client: null,
   });
   console.log('✓ agents.ts: Agent, ModeratorAgent');
@@ -351,7 +351,8 @@ async function main(): Promise<void> {
       .filter((a) => a.agentId !== 'moderator')
       .forEach((a) => {
         // Handle chalk color safely with a type assertion
-        console.log(chalk.white(`  • ${chalkColor(a.name)} - ${chalkColor(a.role)}`));
+        const chalkColor = a.color;
+        console.log(chalk.white(`  • ${chalkColor.bold(a.name)} - ${chalkColor(a.role)}`));
       });
 
     // Start the meeting with a more visual separator
@@ -382,7 +383,7 @@ async function main(): Promise<void> {
       const currentDate = new Date().toISOString().split('T')[0];
 
       // Create a slug from the meeting purpose (lowercase, remove special chars, replace spaces with hyphens)
-      const topicSlug = meetingPurpose
+      const topicSlug = (meetingPurpose || '')
         .toLowerCase()
         .replace(/[^\w\s-]/g, '') // Remove special characters
         .replace(/\s+/g, '-') // Replace spaces with hyphens

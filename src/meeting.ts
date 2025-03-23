@@ -9,7 +9,8 @@ const Input = (Enquirer as any).Input;
 import type Anthropic from '@anthropic-ai/sdk';
 import { Agent, ModeratorAgent } from './agents.js';
 import type { MeetingSimulatorOptions, Message, PersonaDirectory, PersonaInfo } from './types.js';
-import { createMessage, debugLog, sleep } from './utils.js';
+import { createMessage, sleep } from './utils.js';
+import { debugLog } from './utils/index.js';
 
 /**
  * Class for simulating a meeting with AI agents

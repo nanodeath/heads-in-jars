@@ -181,10 +181,8 @@ export class MeetingSimulator {
     // Introduce moderator first
     if (this.moderator) {
       // Create spinner for the moderator introduction
-      const spinnerColor = this.moderator.color.replace('Bright', '') || 'white';
       const introSpinner = createSpinner(
-        `✋ ${this.moderator.name} is preparing an introduction...`,
-        spinnerColor,
+        `✋ ${this.moderator.color.bold(this.moderator.name)} is preparing an introduction...`,
       ).start();
 
       // Generate the introduction
@@ -203,8 +201,9 @@ export class MeetingSimulator {
     for (const [agentId, agent] of Object.entries(this.agents)) {
       if (agentId !== 'moderator') {
         // Create spinner for agent introduction
-        const spinnerColor = agent.color.replace('Bright', '') || 'white';
-        const introSpinner = createSpinner(`✋ ${agent.name} is preparing an introduction...`, spinnerColor).start();
+        const introSpinner = createSpinner(
+          `✋ ${agent.color.bold(agent.name)} is preparing an introduction...`,
+        ).start();
 
         // Flag to track if we've received the first chunk
         let receivedFirstChunk = false;
@@ -408,10 +407,8 @@ export class MeetingSimulator {
     process.on('SIGINT', sigintHandler);
 
     // Spinner for the speaking agent with interrupt instructions
-    const spinnerColor = agent.color.replace('Bright', '') || 'white';
     const responseSpinner = createSpinner(
-      `✋ ${agent.name} is composing a response... (Press Ctrl+C to interrupt)`,
-      spinnerColor,
+      `✋ ${agent.color.bold(agent.name)} is composing a response... (^C to interrupt)`,
     ).start();
 
     // Log that we're generating a response
@@ -496,7 +493,7 @@ export class MeetingSimulator {
     const conclusionSpinner = createSpinner('The moderator is preparing meeting summary...', 'cyan').start();
 
     // Generate the meeting conclusion
-    const endMessage = await this.moderator?.endMeeting(this.conversationManager.getAllMessages());
+    const endMessage = (await this.moderator?.endMeeting(this.conversationManager.getAllMessages())) || 'endmessage';
 
     // Stop spinner and display conclusion
     conclusionSpinner.succeed('Meeting summary ready');
@@ -520,7 +517,8 @@ export class MeetingSimulator {
     const conclusionSpinner = createSpinner('The moderator is preparing meeting summary...', 'cyan').start();
 
     // Generate the meeting conclusion
-    const conclusionMessage = await this.moderator?.endMeeting(this.conversationManager.getAllMessages());
+    const conclusionMessage =
+      (await this.moderator?.endMeeting(this.conversationManager.getAllMessages())) || 'conclusionmessage';
 
     // Stop spinner and display conclusion
     conclusionSpinner.succeed('Meeting summary ready');

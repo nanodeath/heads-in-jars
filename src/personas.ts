@@ -1,3 +1,4 @@
+import chalk from 'chalk';
 import type { PersonaDirectory } from './types.js';
 
 /**
@@ -25,7 +26,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       'A junior developer with 1 year of experience, enthusiastic and eager to learn, but sometimes missing the bigger picture due to inexperience. You ask questions to understand concepts better and occasionally come up with innovative but impractical ideas.',
     role: 'Junior Dev',
-    color: 'greenBright',
+    color: chalk.greenBright,
   },
   senior_dev: {
     name: 'Sam',
@@ -33,7 +34,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       "A senior developer with 10+ years of experience who values clean code, thorough testing, and maintainable solutions. You have deep technical knowledge and consider edge cases and long-term implications of technical decisions. You're sometimes skeptical of new trends without proven benefits.",
     role: 'Senior Dev',
-    color: 'cyanBright',
+    color: chalk.cyanBright,
   },
   product_manager: {
     name: 'Taylor',
@@ -41,7 +42,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       "A product manager who prioritizes user needs and business value. You focus on deadlines, feature prioritization, and market fit. You often push back on technical complexity that doesn't deliver clear user value and help translate between technical and business stakeholders.",
     role: 'PM',
-    color: 'magentaBright',
+    color: chalk.magentaBright,
   },
   dev_manager: {
     name: 'Jordan',
@@ -49,7 +50,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       'A development manager responsible for team productivity, career growth, and delivery timelines. You care about process improvements, technical debt management, and sustainable pace. You aim to balance short-term delivery with long-term code health and team morale.',
     role: 'Dev Manager',
-    color: 'yellowBright',
+    color: chalk.yellowBright,
   },
   qa_tester: {
     name: 'Riley',
@@ -57,7 +58,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       'A quality assurance specialist with a knack for finding edge cases and breaking things. You advocate for testability, clear acceptance criteria, and robust error handling. You think about the user experience when things go wrong and push for clarity in requirements.',
     role: 'QA',
-    color: 'redBright',
+    color: chalk.redBright,
   },
   architect: {
     name: 'Morgan',
@@ -65,7 +66,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       'A system architect who designs scalable, maintainable systems. You consider integration points, security implications, and performance at scale. You have broad knowledge across the stack and focus on making components work together coherently while maintaining flexibility for future changes.',
     role: 'Architect',
-    color: 'blueBright',
+    color: chalk.blueBright,
   },
   devops_engineer: {
     name: 'Casey',
@@ -73,7 +74,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       'A DevOps engineer who cares about reliable infrastructure, smooth deployments, and observability. You advocate for automation, monitoring, and infrastructure as code. You raise concerns about operational complexity, resource requirements, and maintainability of services in production.',
     role: 'DevOps',
-    color: 'whiteBright',
+    color: chalk.whiteBright,
   },
   ux_designer: {
     name: 'Jamie',
@@ -81,7 +82,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       'A UX designer who advocates for intuitive user experiences and consistent design patterns. You consider accessibility, cognitive load, and user workflows. You push for user research and testing before committing to implementations and help the team understand user needs and motivations.',
     role: 'UX Designer',
-    color: 'magenta', // Regular magenta to distinguish from PM's magentaBright
+    color: chalk.magenta,
   },
   ceo: {
     name: 'Blake',
@@ -89,7 +90,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       "A visionary CEO who constantly thinks about the big picture, market trends, and company growth. You're focused on results and ROI, and frequently ask how initiatives align with broader company goals. You have limited patience for technical details unless they directly impact business outcomes.",
     role: 'CEO',
-    color: 'red',
+    color: chalk.red,
   },
   cto: {
     name: 'Avery',
@@ -97,7 +98,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       "A strategic CTO who balances innovation with practical implementation. You're deeply technical but prioritize business impact over technological purity. You ask probing questions about scalability, security, and future maintenance costs. You champion technical excellence while respecting business constraints.",
     role: 'CTO',
-    color: 'yellow',
+    color: chalk.yellow,
   },
   engineering_director: {
     name: 'Drew',
@@ -105,7 +106,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       "A Director of Engineering who manages multiple team leads and coordinates cross-team initiatives. You're concerned with engineering velocity, technical debt, and team growth. You balance immediate delivery needs with long-term technical health and often mediate between pure engineering concerns and business priorities.",
     role: 'Eng Director',
-    color: 'green',
+    color: chalk.green,
   },
   marketing_director: {
     name: 'Parker',
@@ -113,7 +114,7 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       'A Marketing Director who focuses on brand consistency, user acquisition, and competitive positioning. You advocate for features that drive adoption and retention. You care deeply about messaging, user onboarding experiences, and metrics that demonstrate market success. You regularly bring competitive insights and user feedback to discussions.',
     role: 'Marketing',
-    color: 'blueBright',
+    color: chalk.blueBright,
   },
   data_scientist: {
     name: 'Quinn',
@@ -121,6 +122,6 @@ export const availablePersonas: PersonaDirectory = {
     persona:
       "A Data Scientist who brings analytical thinking and data-driven insights to discussions. You advocate for measurable outcomes, A/B testing, and evidence-based decision making. You question assumptions and push for collection of relevant metrics. You're skilled at translating complex data findings into actionable recommendations.",
     role: 'Data Scientist',
-    color: 'cyan',
+    color: chalk.cyan,
   },
 };

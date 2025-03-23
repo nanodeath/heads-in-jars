@@ -1,7 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import chalk, { type ChalkInstance } from 'chalk';
 import type { AgentOptions, Message, ModeratorOptions, PersonaDirectory, PersonaInfo, TokenUsage } from './types.js';
-import { calculateCost, createMessage, debugLog, sleep, withRetryLogic } from './utils.js';
+import { calculateCost, withRetryLogic } from './utils.js';
+import { debugLog } from './utils/index.js';
 
 /**
  * Base class for AI agents
