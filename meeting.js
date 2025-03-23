@@ -272,15 +272,44 @@ class MeetingSimulator {
         
         // Determine who was the last agent to speak (to prevent back-to-back turns)
         let lastSpeakerId = null;
+        let lastMessageWasUserInput = false;
+        let inIntroductionPhase = true; // Assume we're in intro phase until we find a non-introduction message
+        
         for (let i = this.conversation.length - 1; i >= 0; i--) {
           const message = this.conversation[i];
-          if (message.role === 'assistant' && message.agentId !== 'moderator') {
-            lastSpeakerId = message.agentId;
-            break;
+          
+          // Check if the last message was from the user
+          if (i === this.conversation.length - 1 && message.role === 'user') {
+            lastMessageWasUserInput = true;
+            break; // Allow anyone to respond to user input
+          }
+          
+          if (message.role === 'assistant') {
+            // Check if we've moved beyond introductions
+            // Introductions typically don't have specific agenda discussion
+            if (message.agentId === 'moderator' && 
+                (message.content.includes("Let's begin with our first agenda item") || 
+                 message.content.includes("Our first agenda item"))) {
+              inIntroductionPhase = false;
+            }
+            
+            if (message.agentId !== 'moderator' && !inIntroductionPhase) {
+              lastSpeakerId = message.agentId;
+              break;
+            }
           }
         }
         
-        debugLog(`Last speaker was: ${lastSpeakerId ? this.agents[lastSpeakerId].name : 'none'}`);
+        // Add debug information about the speaking context
+        if (lastMessageWasUserInput) {
+          debugLog(`Last message was from user - anyone can speak next`);
+          lastSpeakerId = null; // Clear last speaker to allow anyone to respond
+        } else if (inIntroductionPhase) {
+          debugLog(`Still in introduction phase - consecutive speaking allowed`);
+          lastSpeakerId = null; // Allow consecutive speaking during introductions
+        } else {
+          debugLog(`Last speaker was: ${lastSpeakerId ? this.agents[lastSpeakerId].name : 'none (or during transition)'}`);
+        }
         
         // Create a tracking object for agent thinking status
         const thinkingStatus = {};

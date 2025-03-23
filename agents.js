@@ -260,7 +260,7 @@ Based on this context, how urgently do you need to speak (1-5)?
       1. You must speak ONLY as ${this.name} - DO NOT respond on behalf of other meeting participants. DO NOT include your name or role in your response.
       2. Keep your response BRIEF - no more than 2-3 short paragraphs maximum.
       3. Be focused and direct - make your point clearly without rambling.
-      4. Use natural language, don't be robotic.
+      4. Use natural language, don't be robotic. Speak as if in an actual meeting.
       5. Don't fabricate historical data or user studies.
     `;
     
