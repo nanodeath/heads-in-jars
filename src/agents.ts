@@ -276,13 +276,14 @@ Based on this context, how urgently do you need to speak (1-5)?
       Keep your responses concise and to the point, focused on adding value to the discussion.
       
       Rules:
-      1. You must speak ONLY as ${this.name} - DO NOT respond on behalf of other meeting participants. DO NOT include your name or role in your response.
-      2. Keep your response BRIEF - no more than 2-3 short paragraphs maximum.
-      3. Be focused and direct - make your point clearly without rambling.
-      4. Use natural language, don't be robotic. Speak as if in an actual meeting.
-      5. IMPORTANT: DO NOT include narrative actions like "*listens intently*", "*nods thoughtfully*", "*thinks about it*", etc. Just speak directly without these narrative descriptors.
-      6. Don't fabricate historical data or user studies.
-      7. Focus on contributing substance to the discussion rather than social pleasantries.
+      1. You must speak ONLY as ${this.name} - DO NOT respond on behalf of other meeting participants.
+      2. CRITICAL: DO NOT include your name, identity or role in your response. The system will add your name automatically. For example, DO NOT start with "${this.name}: " or "${this.name} [${this.role}]: " or anything similar.
+      3. Keep your response BRIEF - no more than 2-3 short paragraphs maximum.
+      4. Be focused and direct - make your point clearly without rambling.
+      5. Use natural language, don't be robotic. Speak as if in an actual meeting.
+      6. IMPORTANT: DO NOT include narrative actions like "*listens intently*", "*nods thoughtfully*", "*thinks about it*", etc. Just speak directly without these narrative descriptors.
+      7. Don't fabricate historical data or user studies.
+      8. Focus on contributing substance to the discussion rather than social pleasantries.
     `;
     
     // Format conversation for the API
@@ -330,7 +331,30 @@ Based on this context, how urgently do you need to speak (1-5)?
           for await (const messageStreamEvent of stream) {
             if (messageStreamEvent.type === 'content_block_delta' && 
                 messageStreamEvent.delta?.text) {
-              const chunk = messageStreamEvent.delta.text;
+              let chunk = messageStreamEvent.delta.text;
+              
+              // Check if this is the first chunk and contains name prefixes to strip
+              if (fullResponse === '') {
+                // Check for common patterns of the agent referring to themselves
+                const selfReferencePatterns = [
+                  `${this.name}: `,
+                  `${this.name} [${this.role}]: `,
+                  `${this.name}[${this.role}]: `,
+                  `${this.name}[${this.role}]:`,
+                  `${this.name} [${this.role}]:`,
+                  `${this.name}, ${this.role}: `,
+                ];
+                
+                // Find and remove any self-reference prefix
+                for (const pattern of selfReferencePatterns) {
+                  if (chunk.startsWith(pattern)) {
+                    chunk = chunk.substring(pattern.length);
+                    debugLog(`Stripped self-reference prefix from response: "${pattern}"`);
+                    break;
+                  }
+                }
+              }
+              
               fullResponse += chunk;
               onStream(chunk);
             }
@@ -384,6 +408,32 @@ Based on this context, how urgently do you need to speak (1-5)?
             
             if (!res.content[0] || typeof res.content[0].text !== 'string') {
               throw new Error('Invalid response format from API');
+            }
+            
+            // Clean up the response to remove any self-references
+            if (res.content[0].text) {
+              let text = res.content[0].text;
+              
+              // Check for common patterns of the agent referring to themselves
+              const selfReferencePatterns = [
+                `${this.name}: `,
+                `${this.name} [${this.role}]: `,
+                `${this.name}[${this.role}]: `,
+                `${this.name}[${this.role}]:`,
+                `${this.name} [${this.role}]:`,
+                `${this.name}, ${this.role}: `,
+              ];
+              
+              // Find and remove any self-reference prefix
+              for (const pattern of selfReferencePatterns) {
+                if (text.startsWith(pattern)) {
+                  text = text.substring(pattern.length);
+                  debugLog(`Stripped self-reference prefix from response: "${pattern}"`);
+                  // Update the response object with the cleaned text
+                  res.content[0].text = text;
+                  break;
+                }
+              }
             }
             
             return res;
