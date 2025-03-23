@@ -3,15 +3,22 @@ import { config } from 'dotenv';
 import Anthropic from '@anthropic-ai/sdk';
 import chalk from 'chalk';
 import figlet from 'figlet';
-import enquirer from 'enquirer';
-const { Confirm, Input, Select, Form, MultiSelect } = enquirer;
+// Import enquirer as ESM
+import Enquirer from 'enquirer';
+// Access specific prompt classes dynamically
+const { Confirm, Input, Select, Form, MultiSelect } = Enquirer as any;
 import ora from 'ora';
-import logUpdate from 'log-update';
 import fs from 'fs';
 import path from 'path';
 
 // Load environment variables
 config();
+
+// Define types
+interface AgendaFileData {
+  meetingPurpose: string;
+  agenda: string[];
+}
 
 // Check for command line arguments
 const isValidationMode = process.argv.includes('--validate');
@@ -28,17 +35,25 @@ global.isDebugMode = isDebugMode;
 import { Agent, ModeratorAgent } from './agents.js';
 import { MeetingSimulator } from './meeting.js';
 import { availablePersonas } from './personas.js';
-import { createMessage, sleep, formatDuration, truncateText, containsAny, generateId, debugLog, calculateCost } from './utils.js';
+import { 
+  createMessage, 
+  sleep, 
+  formatDuration, 
+  truncateText, 
+  containsAny, 
+  generateId, 
+  debugLog, 
+  calculateCost 
+} from './utils.js';
+import { PersonaDirectory, PersonaInfo } from './types.js';
 
 const defaultLowEndModel = 'claude-3-5-haiku-latest';
 const defaultHighEndModel = 'claude-3-5-haiku-latest'; // 'claude-3-7-sonnet-latest'
 
 /**
  * Read and parse an agenda file
- * @param {string} filePath - Path to the agenda file
- * @returns {Object} Object containing meetingPurpose and agenda
  */
-function readAgendaFile(filePath) {
+function readAgendaFile(filePath: string): AgendaFileData | null {
   try {
     if (!fs.existsSync(filePath)) {
       console.error(chalk.red(`Error: Agenda file not found at ${filePath}`));
@@ -65,34 +80,35 @@ function readAgendaFile(filePath) {
     }
     
     return { meetingPurpose, agenda };
-  } catch (error) {
+  } catch (error: any) {
     console.error(chalk.red(`Error reading agenda file: ${error.message}`));
     return null;
   }
 }
 
 // Validate all imports
-function validateImports() {
+function validateImports(): boolean {
   console.log(chalk.cyan('Validating imports...'));
   
   // Validate utility functions
-  console.log('✓ utils.js: createMessage, sleep, formatDuration, truncateText, containsAny, generateId');
+  console.log('✓ utils.ts: createMessage, sleep, formatDuration, truncateText, containsAny, generateId');
   
   // Validate agent module
   const agentInstance = new Agent({
     agentId: 'test',
     name: 'Test Agent',
     persona: 'Test persona',
+    role: 'Dev',
     color: 'blue',
     client: null,
   });
-  console.log('✓ agents.js: Agent, ModeratorAgent');
+  console.log('✓ agents.ts: Agent, ModeratorAgent');
   
   // Validate personas
-  console.log(`✓ personas.js: ${Object.keys(availablePersonas).length} personas available`);
+  console.log(`✓ personas.ts: ${Object.keys(availablePersonas).length} personas available`);
   
   // Validate meeting simulator
-  console.log('✓ meeting.js: MeetingSimulator');
+  console.log('✓ meeting.ts: MeetingSimulator');
   
   // Validate file handling
   console.log('✓ fs: File system module for agenda file reading');
@@ -109,7 +125,7 @@ if (!isValidationMode) {
 }
 
 // Start the app
-async function main() {
+async function main(): Promise<void> {
   // Run in validation mode if --validate flag is provided
   if (isValidationMode) {
     validateImports();
@@ -131,7 +147,7 @@ async function main() {
       const apiKeyPrompt = await new Input({
         name: 'apiKey',
         message: 'Enter your Anthropic API key:',
-        validate: (value) => value.length > 0 ? true : 'API key is required'
+        validate: (value: string) => value.length > 0 ? true : 'API key is required'
       }).run();
       
       apiKey = apiKeyPrompt;
@@ -164,8 +180,8 @@ async function main() {
     }).run();
     
     // Get meeting purpose and agenda items (either from file or user input)
-    let meetingPurpose;
-    let agenda = [];
+    let meetingPurpose: string;
+    let agenda: string[] = [];
     
     // If an agenda file was provided, read it
     if (agendaFilePath) {
@@ -188,7 +204,7 @@ async function main() {
     }
     
     // If we didn't get meeting purpose from file, ask the user
-    if (!meetingPurpose) {
+    if (!meetingPurpose!) {
       meetingPurpose = await new Input({
         name: 'purpose',
         message: 'Enter a brief description of the meeting purpose:',
@@ -250,11 +266,11 @@ async function main() {
     // Wait for initialization to complete with detailed status updates and persona selection
     await simulator.initialize(
       // Status update callback
-      (statusMessage) => {
+      (statusMessage: string) => {
         spinner.text = statusMessage;
       },
       // Persona selection callback
-      async (recommendedPersonas, availablePersonas) => {
+      async (recommendedPersonas: Record<string, PersonaInfo>, availablePersonas: PersonaDirectory) => {
         // Stop the spinner to allow interactive selection
         spinner.stop();
         
@@ -280,14 +296,14 @@ async function main() {
           choices,
           initial: initialSelection, // Pre-select recommended personas
           hint: 'Select at least 2 participants',
-          validate: (selected) => {
+          validate: (selected: string[]) => {
             if (selected.length < 2) return 'Please select at least 2 participants';
             return true;
           }
         }).run();
         
         // Create object of selected personas
-        const selectedPersonas = {};
+        const selectedPersonas: Record<string, PersonaInfo> = {};
         for (const id of selectedIds) {
           selectedPersonas[id] = availablePersonas[id];
         }
@@ -314,7 +330,9 @@ async function main() {
     Object.values(simulator.agents)
       .filter(a => a.agentId !== 'moderator')
       .forEach(a => {
-        console.log(chalk.white(`  • ${chalk[a.color](a.name)} - ${chalk[a.color](a.role)}`));
+        // Handle chalk color safely with a type assertion
+        const chalkColor = (chalk as any)[a.color];
+        console.log(chalk.white(`  • ${chalkColor(a.name)} - ${chalkColor(a.role)}`));
       });
     
     // Start the meeting with a more visual separator
@@ -362,7 +380,7 @@ async function main() {
     }
     
     process.exit(0);
-  } catch (error) {
+  } catch (error: any) {
     console.error(chalk.red('Error:'), error.message);
     process.exit(1);
   }

@@ -1,24 +1,33 @@
 import fs from 'fs';
 import chalk from 'chalk';
 import ora from 'ora';
-import enquirer from 'enquirer';
-const { Input } = enquirer;
+// Import enquirer as ESM
+import Enquirer from 'enquirer';
+// Access Input class dynamically
+const Input = (Enquirer as any).Input;
 import { Agent, ModeratorAgent } from './agents.js';
 import { createMessage, sleep, debugLog } from './utils.js';
+import { Message, MeetingSimulatorOptions, PersonaDirectory } from './types.js';
 
 /**
  * Class for simulating a meeting with AI agents
  */
-class MeetingSimulator {
+export class MeetingSimulator {
+  client: any; // Anthropic API client
+  agenda: string[];
+  userInvolvement: string;
+  lowEndModel: string;
+  highEndModel: string;
+  meetingPurpose: string;
+  conversation: Message[];
+  meetingPhase: 'setup' | 'introductions' | 'discussion' | 'conclusion';
+  lastNonModeratorSpeaker: string | null;
+  availablePersonas: PersonaDirectory;
+  agents: Record<string, Agent>;
+  moderator: ModeratorAgent | null;
+
   /**
    * Create a new meeting simulator
-   * @param {Object} options - Simulator options
-   * @param {Object} options.client - Anthropic API client
-   * @param {Array} options.agenda - Meeting agenda items
-   * @param {string} options.userInvolvement - Level of user involvement (none, low, high)
-   * @param {string} options.lowEndModel - Model to use for urgency calculations
-   * @param {string} options.highEndModel - Model to use for main responses
-   * @param {string} options.meetingPurpose - Purpose of the meeting
    */
   constructor({
     client,
@@ -27,7 +36,7 @@ class MeetingSimulator {
     lowEndModel = 'claude-3-haiku-20240307',
     highEndModel = 'claude-3-sonnet-20240229',
     meetingPurpose = 'Weekly team meeting'
-  }) {
+  }: MeetingSimulatorOptions) {
     this.client = client;
     this.agenda = agenda;
     this.userInvolvement = userInvolvement;
@@ -48,13 +57,16 @@ class MeetingSimulator {
 
   /**
    * Initialize the meeting simulator
-   * @param {Function} statusCallback - Callback function to update status
-   * @param {Function} personaSelectionCallback - Optional callback to let the user select personas
-   * @returns {Promise<void>}
    */
-  async initialize(statusCallback = null, personaSelectionCallback = null) {
+  async initialize(
+    statusCallback: ((message: string) => void) | null = null,
+    personaSelectionCallback: ((
+      recommendedPersonas: Record<string, any>,
+      availablePersonas: PersonaDirectory
+    ) => Promise<Record<string, any>>) | null = null
+  ): Promise<void> {
     // Helper function to update status if callback provided
-    const updateStatus = (message) => {
+    const updateStatus = (message: string) => {
       if (statusCallback && typeof statusCallback === 'function') {
         statusCallback(message);
       }
@@ -101,7 +113,9 @@ class MeetingSimulator {
     // Add moderator to agents
     updateStatus('Adding moderator to meeting roster...');
     await sleep(300); // Small pause to show status
-    this.agents['moderator'] = this.moderator;
+    if (this.moderator) {
+      this.agents['moderator'] = this.moderator;
+    }
     
     // Final setup
     updateStatus('Preparing meeting context and history...');
@@ -109,12 +123,11 @@ class MeetingSimulator {
 
   /**
    * Initialize Agent objects for selected personas
-   * @param {Object} selectedPersonas - Selected personas for the meeting
-   * @param {Function} statusCallback - Callback function to update status
-   * @returns {Promise<Object>} Initialized agents
    */
-  async _initializeAgents(selectedPersonas) {
-    const agents = {};
+  async _initializeAgents(
+    selectedPersonas: Record<string, any>
+  ): Promise<Record<string, Agent>> {
+    const agents: Record<string, Agent> = {};
     const personaCount = Object.keys(selectedPersonas).length;
     let currentPersona = 0;
     
@@ -146,13 +159,10 @@ class MeetingSimulator {
 
   /**
    * Add a message to the conversation history and update message counts
-   * @param {string} role - Message role ('user' or 'assistant')
-   * @param {string} content - Message content
-   * @param {string} agentId - Agent ID for assistant messages
    */
-  _addMessage(role, content, agentId = null) {
-    let agentName = null;
-    let agentRole = null;
+  _addMessage(role: 'user' | 'assistant', content: string, agentId: string | null = null): void {
+    let agentName: string | null = null;
+    let agentRole: string | null = null;
     
     // If this is an agent message, include name and role
     if (role === 'assistant' && agentId && this.agents[agentId]) {
@@ -191,43 +201,47 @@ class MeetingSimulator {
 
   /**
    * Get the most recent messages from the conversation
-   * @param {number} count - Number of messages to get
-   * @returns {Array} Recent messages
    */
-  _getRecentMessages(count = 10) {
+  _getRecentMessages(count: number = 10): Message[] {
     return this.conversation.slice(-Math.min(count, this.conversation.length));
   }
 
   /**
    * Introduce all participants at the start of the meeting
-   * @returns {Promise<void>}
    */
-  async introduceParticipants() {
+  async introduceParticipants(): Promise<void> {
     // Update meeting phase to introductions
     this.meetingPhase = 'introductions';
     debugLog(`Meeting phase changed to: ${this.meetingPhase}`);
     
     // Introduce moderator first
-    const moderatorIntro = await this.moderator.generateIntroduction();
-    this.moderator.printMessage(moderatorIntro);
-    this._addMessage('assistant', moderatorIntro, 'moderator');
+    if (this.moderator) {
+      const moderatorIntro = await this.moderator.generateIntroduction();
+      this.moderator.printMessage(moderatorIntro);
+      this._addMessage('assistant', moderatorIntro, 'moderator');
+    }
     
     // Introduce other participants
     for (const [agentId, agent] of Object.entries(this.agents)) {
       if (agentId !== 'moderator') {
-        agent.printMessage(agent.introduction);
-        this._addMessage('assistant', agent.introduction, agentId);
-        // Store the last speaker but don't enforce consecutive speaking rule during introductions
-        this.lastNonModeratorSpeaker = agentId;
+        if (agent.introduction) {
+          agent.printMessage(agent.introduction);
+          this._addMessage('assistant', agent.introduction, agentId);
+          // Store the last speaker but don't enforce consecutive speaking rule during introductions
+          this.lastNonModeratorSpeaker = agentId;
+        }
       }
     }
   }
 
   /**
    * Run the simulated meeting
-   * @returns {Promise<void>}
    */
-  async runMeeting() {
+  async runMeeting(): Promise<void> {
+    if (!this.moderator) {
+      throw new Error("Moderator not initialized");
+    }
+
     // Start the meeting - transitions from introductions to discussion phase
     const startMessage = await this.moderator.startMeeting();
     this.moderator.printMessage(startMessage);
@@ -330,7 +344,7 @@ class MeetingSimulator {
         
         // Calculate urgency scores for each agent
         const recentMessages = this._getRecentMessages(10);
-        const urgencyScores = {};
+        const urgencyScores: Record<string, number> = {};
         
         debugLog('Calculating urgency scores for all participants');
         
@@ -359,7 +373,7 @@ class MeetingSimulator {
         }
         
         // Determine who cannot speak based on meeting phase and last speaker
-        let restrictedSpeakerId = null;
+        let restrictedSpeakerId: string | null = null;
         
         // Only apply the consecutive speaker restriction during the discussion phase
         // and when the last message wasn't from a user
@@ -371,7 +385,7 @@ class MeetingSimulator {
         }
         
         // Create a tracking object for agent thinking status
-        const thinkingStatus = {};
+        const thinkingStatus: Record<string, string> = {};
         participantAgentIds.forEach(id => {
           // If this is the restricted speaker, mark them as "zipped" (can't speak again)
           // Otherwise mark as "thinking" initially
@@ -401,7 +415,7 @@ class MeetingSimulator {
         }).start();
         
         // Collect all urgency calculation promises
-        const urgencyPromises = [];
+        const urgencyPromises: Promise<{agentId: string, urgency: number}>[] = [];
         for (const agentId of participantAgentIds) {
           // Skip urgency calculation for restricted speaker (they can't speak again immediately)
           if (agentId === restrictedSpeakerId) {
@@ -430,8 +444,8 @@ class MeetingSimulator {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3); // Top 3 most urgent
         
-        let nextSpeaker;
-        let speakerSelectionReason;
+        let nextSpeaker: string;
+        let speakerSelectionReason: string;
         
         if (Math.random() < 0.7 && eligibleSpeakers.length > 0) {
           // 70% chance to pick from top urgent speakers
@@ -482,9 +496,11 @@ class MeetingSimulator {
             const agent = this.agents[agentId];
             // Display each agent's urgency score with formatting based on how urgent it is
             const scoreColor = score >= 4 ? 'redBright' : 
-                           score >= 3 ? 'yellowBright' : 'greenBright';
+                          score >= 3 ? 'yellowBright' : 'greenBright';
+            // Use type assertion for chalk color
+            const colorFn = (chalk as any)[scoreColor];
             console.log(chalk.gray(`${agent.name} [${agent.role}]: `) + 
-                        chalk[scoreColor](`${score.toFixed(2)}`));
+                      colorFn(`${score.toFixed(2)}`));
           }
           console.log(chalk.gray('====================='));
         }
@@ -513,9 +529,10 @@ class MeetingSimulator {
         process.on('SIGINT', sigintHandler);
         
         // Spinner for the speaking agent with interrupt instructions
+        const spinnerColor = agent.color.replace('Bright', '') || 'white';
         const responseSpinner = ora({
           text: `✋ ${agent.name} is composing a response... (Press Ctrl+C to interrupt)`,
-          color: agent.color.replace('Bright', '') || 'white',
+          color: spinnerColor as any,
         }).start();
         
         // Log that we're generating a response
@@ -592,9 +609,12 @@ class MeetingSimulator {
 
   /**
    * Save the meeting transcript to a Markdown file
-   * @param {string} filename - Output filename
    */
-  async saveTranscript(filename) {
+  async saveTranscript(filename: string): Promise<void> {
+    if (!this.moderator) {
+      throw new Error("Moderator not initialized");
+    }
+    
     // First, generate a meeting summary using the moderator
     let summary = await this.moderator.generateMeetingSummary(this.conversation);
     
@@ -685,5 +705,3 @@ class MeetingSimulator {
     debugLog(`Saved transcript to ${filename}`);
   }
 }
-
-export { MeetingSimulator };

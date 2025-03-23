@@ -1,22 +1,37 @@
 import chalk from 'chalk';
-import { createMessage, debugLog, calculateCost, withRetryLogic, sleep } from './utils.js';
+import { 
+  createMessage, 
+  debugLog, 
+  calculateCost, 
+  withRetryLogic, 
+  sleep 
+} from './utils.js';
+import { 
+  AgentOptions, 
+  ModeratorOptions, 
+  Message, 
+  TokenUsage,
+  PersonaDirectory
+} from './types.js';
 
 /**
  * Base class for AI agents
  */
-class Agent {
+export class Agent {
+  agentId: string;
+  name: string;
+  persona: string;
+  role: string;
+  color: string;
+  client: any; // Anthropic API client
+  lowEndModel: string;
+  highEndModel: string;
+  maxTokens: number;
+  messagesSinceLastSpoken: number;
+  introduction: string;
+
   /**
    * Create a new agent
-   * @param {Object} options - Agent options
-   * @param {string} options.agentId - Unique identifier for the agent
-   * @param {string} options.name - Display name for the agent
-   * @param {string} options.persona - Description of the agent's personality and role
-   * @param {string} options.role - Short role title (e.g., "PM", "Dev") 
-   * @param {string} options.color - Color for the agent's messages
-   * @param {Object} options.client - Anthropic API client
-   * @param {string} options.lowEndModel - Model to use for urgency calculations
-   * @param {string} options.highEndModel - Model to use for main responses
-   * @param {number} options.maxTokens - Maximum tokens for responses
    */
   constructor({
     agentId,
@@ -28,7 +43,7 @@ class Agent {
     lowEndModel = 'claude-3-haiku-20240307',
     highEndModel = 'claude-3-sonnet-20240229',
     maxTokens = 1000
-  }) {
+  }: AgentOptions) {
     this.agentId = agentId;
     this.name = name;
     this.persona = persona;
@@ -39,17 +54,15 @@ class Agent {
     this.highEndModel = highEndModel;
     this.maxTokens = maxTokens;
     this.messagesSinceLastSpoken = 0; // Count of messages since this agent last spoke
-    this.introduction = null;
+    this.introduction = "";
   }
 
   /**
    * Generate an introduction for the agent
-   * @param {Function} statusCallback - Optional callback for status updates
-   * @returns {Promise<string>} Introduction text
    */
-  async generateIntroduction(statusCallback = null) {
+  async generateIntroduction(statusCallback: ((message: string) => void) | null = null): Promise<string> {
     // Helper function to update status if callback provided
-    const updateStatus = (message) => {
+    const updateStatus = (message: string) => {
       if (statusCallback && typeof statusCallback === 'function') {
         statusCallback(message);
       }
@@ -113,7 +126,7 @@ class Agent {
       
       this.introduction = response.content[0].text;
       return this.introduction;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error generating introduction for ${this.name}:`, error.message);
       this.introduction = `Hello, I'm ${this.name}. [Error generating introduction: ${error.message}]`;
       return this.introduction;
@@ -122,11 +135,8 @@ class Agent {
 
   /**
    * Calculate how urgently this agent needs to speak (1-5 scale)
-   * @param {Array} recentMessages - Recent messages from the conversation
-   * @param {string} currentAgendaItem - Current agenda item being discussed
-   * @returns {Promise<number>} Urgency score
    */
-  async calculateUrgency(recentMessages, currentAgendaItem) {
+  async calculateUrgency(recentMessages: Message[], currentAgendaItem: string): Promise<number> {
     // Create a more structured system prompt for calculating urgency
     const systemPrompt = `
       You are an AI assistant helping to determine how urgently a meeting participant needs to speak.
@@ -203,7 +213,7 @@ Based on this context, how urgently do you need to speak (1-5)?
             console.error(`Using fallback for ${this.name} urgency calculation`);
             return { 
               content: [{ text: "3" }],  // Default medium urgency
-              usage: { input_tokens: 0, output_tokens: 0 }
+              usage: { input_tokens: 0, output_tokens: 0 } as TokenUsage
             };
           }
         }
@@ -246,7 +256,7 @@ Based on this context, how urgently do you need to speak (1-5)?
       
       return totalUrgency;
       
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error calculating urgency for ${this.name}:`, error.message);
       return 3.0; // Default medium urgency on error
     }
@@ -254,10 +264,8 @@ Based on this context, how urgently do you need to speak (1-5)?
 
   /**
    * Generate a response based on the conversation context
-   * @param {Array} conversation - Full conversation history
-   * @returns {Promise<string>} Generated response
    */
-  async generateResponse(conversation) {
+  async generateResponse(conversation: Message[]): Promise<string> {
     // Reset the count of messages since last spoken
     this.messagesSinceLastSpoken = 0;
     
@@ -338,7 +346,7 @@ Based on this context, how urgently do you need to speak (1-5)?
             
             return { 
               content: [{ text: fallbackMessage }],
-              usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 }
+              usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 } as TokenUsage
             };
           }
         }
@@ -362,7 +370,7 @@ Based on this context, how urgently do you need to speak (1-5)?
       });
       
       return response.content[0].text;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error generating response for ${this.name}:`, error.message);
       return `[Error generating response: ${error.message}]`;
     }
@@ -370,9 +378,8 @@ Based on this context, how urgently do you need to speak (1-5)?
 
   /**
    * Print a message from this agent with appropriate formatting
-   * @param {string} content - Message content
    */
-  printMessage(content) {
+  printMessage(content: string): void {
     // Use role directly or default to "Moderator" for the moderator
     const roleTitle = this.role || (this.agentId === 'moderator' ? 'Moderator' : this.agentId);
     
@@ -381,12 +388,15 @@ Based on this context, how urgently do you need to speak (1-5)?
     
     // Format the message properly - avoid duplication if the prefix already exists
     let formattedMessage;
+    // Handle chalk color safely with a type assertion
+    const chalkColor = (chalk as any)[this.color];
+    
     if (content.startsWith(nameRolePrefix)) {
       // Content already has the prefix, just use it directly
-      formattedMessage = chalk[this.color](content);
+      formattedMessage = chalkColor(content);
     } else {
       // Add the prefix
-      formattedMessage = chalk[this.color](`${nameRolePrefix}${content}`);
+      formattedMessage = chalkColor(`${nameRolePrefix}${content}`);
     }
     
     console.log(formattedMessage);
@@ -397,16 +407,15 @@ Based on this context, how urgently do you need to speak (1-5)?
 /**
  * Specialized agent that moderates the meeting
  */
-class ModeratorAgent extends Agent {
+export class ModeratorAgent extends Agent {
+  agenda: string[];
+  currentAgendaItem: number;
+  availablePersonas: PersonaDirectory;
+  selectedPersonas: Record<string, any>;
+  meetingPurpose: string;
+
   /**
    * Create a new moderator agent
-   * @param {Object} options - Moderator options
-   * @param {Object} options.client - Anthropic API client
-   * @param {Array} options.agenda - Meeting agenda items
-   * @param {Object} options.availablePersonas - Available personas for the meeting
-   * @param {string} options.lowEndModel - Model to use for urgency calculations
-   * @param {string} options.highEndModel - Model to use for main responses
-   * @param {string} options.meetingPurpose - Purpose of the meeting
    */
   constructor({
     client,
@@ -415,7 +424,7 @@ class ModeratorAgent extends Agent {
     lowEndModel = 'claude-3-haiku-20240307',
     highEndModel = 'claude-3-opus-20240229',
     meetingPurpose = 'Weekly team meeting'
-  }) {
+  }: ModeratorOptions) {
     super({
       agentId: 'moderator',
       name: 'Meeting Moderator',
@@ -436,9 +445,8 @@ class ModeratorAgent extends Agent {
 
   /**
    * Select which personas should participate in the meeting based on the agenda
-   * @returns {Promise<Object>} Selected personas
    */
-  async selectParticipants() {
+  async selectParticipants(): Promise<Record<string, any>> {
     const systemPrompt = `
       You are a meeting moderator planning the participants for a meeting.
       
@@ -469,7 +477,7 @@ class ModeratorAgent extends Agent {
       
       // Find JSON array in the text (handle cases where Claude adds explanation)
       const jsonMatch = responseText.match(/\[(.*)\]/s);
-      let selectedIds;
+      let selectedIds: string[];
       
       if (jsonMatch) {
         const jsonText = '[' + jsonMatch[1] + ']';
@@ -499,20 +507,20 @@ class ModeratorAgent extends Agent {
       }
       
       // Create selected personas dict
-      const selected = {};
+      const selected: Record<string, any> = {};
       for (const pid of selectedIds) {
         selected[pid] = this.availablePersonas[pid];
       }
       
       return selected;
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error selecting participants:', error.message);
       
       // Fallback: select a random subset of 2-4 personas
       const availableIds = Object.keys(this.availablePersonas);
       const numToSelect = Math.min(4, availableIds.length);
-      const selectedIds = [];
+      const selectedIds: string[] = [];
       
       for (let i = 0; i < numToSelect; i++) {
         const randomIndex = Math.floor(Math.random() * availableIds.length);
@@ -520,7 +528,7 @@ class ModeratorAgent extends Agent {
         availableIds.splice(randomIndex, 1);
       }
       
-      const selected = {};
+      const selected: Record<string, any> = {};
       for (const pid of selectedIds) {
         selected[pid] = this.availablePersonas[pid];
       }
@@ -531,9 +539,8 @@ class ModeratorAgent extends Agent {
 
   /**
    * Generate the meeting introduction and first agenda item
-   * @returns {Promise<string>} Introduction text
    */
-  async startMeeting() {
+  async startMeeting(): Promise<string> {
     const systemPrompt = `
       You are the meeting moderator starting a meeting.
       
@@ -568,10 +575,8 @@ class ModeratorAgent extends Agent {
 
   /**
    * Move to the next agenda item and generate a transition message
-   * @param {Array} conversation - Conversation history
-   * @returns {Promise<string|null>} Transition text or null if meeting is over
    */
-  async nextAgendaItem(conversation) {
+  async nextAgendaItem(conversation: Message[]): Promise<string | null> {
     this.currentAgendaItem += 1;
     if (this.currentAgendaItem >= this.agenda.length) {
       // This will be ignored since we check for null return in meeting.js
@@ -581,7 +586,7 @@ class ModeratorAgent extends Agent {
     }
     
     // Get relevant messages for the current agenda item
-    const currentItemMessages = [];
+    const currentItemMessages: Message[] = [];
     let foundStart = false;
     
     for (let i = conversation.length - 1; i >= 0; i--) {
@@ -652,7 +657,7 @@ class ModeratorAgent extends Agent {
           
           return { 
             content: [{ text: fallbackMessage }],
-            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 }
+            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 } as TokenUsage
           };
         }
       }
@@ -663,10 +668,8 @@ class ModeratorAgent extends Agent {
 
   /**
    * Generate a meeting conclusion message
-   * @param {Array} conversation - Conversation history
-   * @returns {Promise<string>} Conclusion text
    */
-  async endMeeting(conversation) {
+  async endMeeting(conversation: Message[]): Promise<string> {
     const systemPrompt = `
       You are the meeting moderator concluding a meeting.
       
@@ -726,7 +729,7 @@ class ModeratorAgent extends Agent {
           
           return { 
             content: [{ text: fallbackMessage }],
-            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 }
+            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 } as TokenUsage
           };
         }
       }
@@ -737,10 +740,8 @@ class ModeratorAgent extends Agent {
 
   /**
    * Generate a comprehensive meeting summary for the transcript
-   * @param {Array} conversation - Full conversation history
-   * @returns {Promise<string>} Detailed meeting summary
    */
-  async generateMeetingSummary(conversation) {
+  async generateMeetingSummary(conversation: Message[]): Promise<string> {
     const systemPrompt = `
       You are the meeting moderator creating a detailed summary of a meeting that just concluded.
       
@@ -808,7 +809,7 @@ class ModeratorAgent extends Agent {
           
           return { 
             content: [{ text: fallbackMessage }],
-            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 }
+            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 } as TokenUsage
           };
         }
       }
@@ -819,12 +820,12 @@ class ModeratorAgent extends Agent {
 
   /**
    * Decide which agent should speak next
-   * @param {Object} agents - Available agents
-   * @param {Array} conversation - Conversation history
-   * @param {string|null} lastSpeakerId - ID of the agent who spoke last (to avoid back-to-back turns)
-   * @returns {Promise<string>} ID of the next speaker
    */
-  async chooseNextSpeaker(agents, conversation, lastSpeakerId = null) {
+  async chooseNextSpeaker(
+    agents: Record<string, Agent>, 
+    conversation: Message[], 
+    lastSpeakerId: string | null = null
+  ): Promise<string> {
     const systemPrompt = `
       You are the meeting moderator deciding who should speak next.
       
@@ -845,7 +846,7 @@ class ModeratorAgent extends Agent {
     
     try {
       // If we have a lastSpeakerId, create available participants excluding that agent
-      const availableParticipants = {};
+      const availableParticipants: Record<string, string> = {};
       for (const [id, agent] of Object.entries(agents)) {
         if (id !== 'moderator' && id !== lastSpeakerId) {
           availableParticipants[id] = agent.name;
@@ -915,7 +916,7 @@ class ModeratorAgent extends Agent {
         return agentIds[Math.floor(Math.random() * agentIds.length)];
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error choosing next speaker:', error.message);
       
       // Random fallback avoiding the last speaker
@@ -932,10 +933,8 @@ class ModeratorAgent extends Agent {
 
   /**
    * Determine if it's time to move to the next agenda item
-   * @param {Array} conversation - Conversation history
-   * @returns {Promise<boolean>} True if it's time to move on
    */
-  async shouldMoveToNextAgendaItem(conversation) {
+  async shouldMoveToNextAgendaItem(conversation: Message[]): Promise<boolean> {
     const systemPrompt = `
       You are the meeting moderator deciding if it's time to move to the next agenda item.
       
@@ -952,7 +951,7 @@ class ModeratorAgent extends Agent {
     `;
     
     // Get messages relevant to the current agenda item
-    const currentItemMessages = [];
+    const currentItemMessages: Message[] = [];
     let foundStart = false;
     
     for (const message of conversation) {
@@ -990,12 +989,10 @@ class ModeratorAgent extends Agent {
       const decision = response.content[0].text.trim().toUpperCase();
       return decision.includes('YES');
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deciding on agenda progression:', error.message);
       // Default to continuing the current item
       return false;
     }
   }
 }
-
-export { Agent, ModeratorAgent };
