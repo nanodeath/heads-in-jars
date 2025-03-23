@@ -177,7 +177,10 @@ async function main() {
         agenda = fileData.agenda;
         
         console.log(chalk.green(`Loaded meeting purpose: ${meetingPurpose}`));
-        console.log(chalk.green(`Loaded ${agenda.length} agenda items from file`));
+        console.log(chalk.green(`Loaded ${agenda.length} agenda items from file:`));
+        agenda.forEach((item, index) => {
+          console.log(chalk.green(`  ${index + 1}. ${item}`));
+        });
       } else {
         console.log(chalk.red('Failed to load agenda from file. Falling back to manual input.'));
         // Continue with manual input below
@@ -244,10 +247,57 @@ async function main() {
       meetingPurpose
     });
     
-    // Wait for initialization to complete with detailed status updates
-    await simulator.initialize((statusMessage) => {
-      spinner.text = statusMessage;
-    });
+    // Wait for initialization to complete with detailed status updates and persona selection
+    await simulator.initialize(
+      // Status update callback
+      (statusMessage) => {
+        spinner.text = statusMessage;
+      },
+      // Persona selection callback
+      async (recommendedPersonas, availablePersonas) => {
+        // Stop the spinner to allow interactive selection
+        spinner.stop();
+        
+        console.log(chalk.cyan('\n✨ Select meeting participants:'));
+        console.log(chalk.gray('The AI has recommended some participants based on the meeting topic,'));
+        console.log(chalk.gray('but you can customize who will attend the meeting.'));
+        
+        // Create choices for MultiSelect
+        const choices = Object.entries(availablePersonas).map(([id, info]) => {
+          return {
+            name: id,
+            message: `${info.name} (${info.role}) - ${info.description}`
+          };
+        });
+        
+        // Get the IDs of recommended personas to use as initial selection
+        const initialSelection = Object.keys(recommendedPersonas);
+        
+        // Use MultiSelect to let user choose personas
+        const selectedIds = await new MultiSelect({
+          name: 'personas',
+          message: 'Select meeting participants (space to toggle, enter to confirm):',
+          choices,
+          initial: initialSelection, // Pre-select recommended personas
+          hint: 'Select at least 2 participants',
+          validate: (selected) => {
+            if (selected.length < 2) return 'Please select at least 2 participants';
+            return true;
+          }
+        }).run();
+        
+        // Create object of selected personas
+        const selectedPersonas = {};
+        for (const id of selectedIds) {
+          selectedPersonas[id] = availablePersonas[id];
+        }
+        
+        // Restart the spinner
+        spinner.start('Finalizing participant selection...');
+        
+        return selectedPersonas;
+      }
+    );
     
     spinner.succeed('Meeting setup complete!');
     
@@ -256,10 +306,16 @@ async function main() {
     console.log(chalk.green('│              Meeting Information                  │'));
     console.log(chalk.green('╰───────────────────────────────────────────────────╯'));
     console.log(chalk.white(`📋 Topic: ${chalk.bold(meetingPurpose)}`));
-    console.log(chalk.white(`📑 Agenda: ${agenda.map((item, i) => chalk.bold(`${i+1}. ${item}`)).join('\n         ')}`));
-    console.log(chalk.white(`👥 Participants: ${Object.values(simulator.agents)
+    console.log(chalk.white(`📑 Agenda:`));
+    agenda.forEach((item, i) => {
+      console.log(chalk.white(`  ${i+1}. ${chalk.bold(item)}`));
+    });
+    console.log(chalk.white(`👥 Participants:`));
+    Object.values(simulator.agents)
       .filter(a => a.agentId !== 'moderator')
-      .map(a => chalk[a.color](a.name)).join(', ')}`));
+      .forEach(a => {
+        console.log(chalk.white(`  • ${chalk[a.color](a.name)} - ${chalk[a.color](a.role)}`));
+      });
     
     // Start the meeting with a more visual separator
     console.log(chalk.green('\n╭───────────────────────────────────────────────────╮'));

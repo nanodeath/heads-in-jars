@@ -45,9 +45,10 @@ class MeetingSimulator {
   /**
    * Initialize the meeting simulator
    * @param {Function} statusCallback - Callback function to update status
+   * @param {Function} personaSelectionCallback - Optional callback to let the user select personas
    * @returns {Promise<void>}
    */
-  async initialize(statusCallback = null) {
+  async initialize(statusCallback = null, personaSelectionCallback = null) {
     // Helper function to update status if callback provided
     const updateStatus = (message) => {
       if (statusCallback && typeof statusCallback === 'function') {
@@ -73,17 +74,25 @@ class MeetingSimulator {
       meetingPurpose: this.meetingPurpose
     });
     
-    // Select and initialize participating agents
-    updateStatus('Selecting meeting participants based on topic...');
-    const selectedPersonas = await this.moderator.selectParticipants();
-    const participantCount = Object.keys(selectedPersonas).length;
-    updateStatus(`Selected ${participantCount} participants for the meeting...`);
+    // Pre-select personas based on the meeting agenda
+    updateStatus('Recommending meeting participants based on topic...');
+    const recommendedPersonas = await this.moderator.selectParticipants();
+    
+    // Allow user to customize participant selection if callback is provided
+    let finalSelectedPersonas = recommendedPersonas;
+    if (personaSelectionCallback && typeof personaSelectionCallback === 'function') {
+      updateStatus('Waiting for user to finalize participant selection...');
+      finalSelectedPersonas = await personaSelectionCallback(recommendedPersonas, this.availablePersonas);
+    }
+    
+    const participantCount = Object.keys(finalSelectedPersonas).length;
+    updateStatus(`Finalizing ${participantCount} participants for the meeting...`);
     
     updateStatus('Configuring participant personas and creating agent profiles...');
     await sleep(300); // Small pause to show status
     
     // Pass the status update function to the agent initialization
-    this.agents = await this._initializeAgents(selectedPersonas);
+    this.agents = await this._initializeAgents(finalSelectedPersonas);
     
     // Add moderator to agents
     updateStatus('Adding moderator to meeting roster...');
