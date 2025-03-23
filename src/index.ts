@@ -32,19 +32,26 @@ const agendaFilePath = agendaFileArg ? agendaFileArg.split('=')[1] : null;
 global.isDebugMode = isDebugMode;
 
 // Import agent and meeting modules
-import { Agent, ModeratorAgent } from './agents.js';
-import { MeetingSimulator } from './meeting.js';
+import { Agent, ModeratorAgent } from './agents/index.js';
+import { MeetingSimulator } from './meeting/index.js';
 import { availablePersonas } from './personas.js';
-import { 
-  createMessage, 
-  sleep, 
-  formatDuration, 
-  truncateText, 
-  containsAny, 
-  generateId, 
-  debugLog, 
-  calculateCost 
-} from './utils.js';
+
+// Import UI utilities
+import { debugLog } from './utils/formatting.js';
+
+// Import time utilities
+import { sleep, formatDuration } from './utils/time.js';
+
+// Import formatting utilities
+import { truncateText, containsAny, generateId } from './utils/formatting.js';
+
+// Import cost utilities
+import { calculateCost } from './utils/costs.js';
+
+// Import conversation utilities
+import { createMessage } from './utils/conversation.js';
+
+// Import types
 import { PersonaDirectory, PersonaInfo } from './types.js';
 
 const defaultLowEndModel = 'claude-3-5-haiku-latest';
