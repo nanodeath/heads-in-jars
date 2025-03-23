@@ -1,5 +1,15 @@
 /**
  * Available personas for the meeting simulator
+ * 
+ * Using a unique color for each persona to improve visual distinction:
+ * - greenBright: Junior Dev (represents growth)
+ * - blueBright: Architect (represents big-picture thinking)
+ * - cyanBright: Senior Dev (represents technical depth)
+ * - magentaBright: PM (represents user-focused mindset)
+ * - yellowBright: Dev Manager (represents caution and oversight)
+ * - redBright: QA (represents finding issues)
+ * - whiteBright: DevOps (represents clarity and infrastructure)
+ * - magenta: UX Designer (represents creativity and design)
  */
 export const availablePersonas = {
     "junior_dev": {
@@ -49,13 +59,13 @@ export const availablePersonas = {
       "description": "DevOps Engineer focused on infrastructure and deployment",
       "persona": "A DevOps engineer who cares about reliable infrastructure, smooth deployments, and observability. You advocate for automation, monitoring, and infrastructure as code. You raise concerns about operational complexity, resource requirements, and maintainability of services in production.",
       "role": "DevOps",
-      "color": "greenBright"
+      "color": "whiteBright"
     },
     "ux_designer": {
       "name": "Jamie",
       "description": "UX Designer advocating for the user experience",
       "persona": "A UX designer who advocates for intuitive user experiences and consistent design patterns. You consider accessibility, cognitive load, and user workflows. You push for user research and testing before committing to implementations and help the team understand user needs and motivations.",
       "role": "UX Designer",
-      "color": "magentaBright"
+      "color": "magenta" // Regular magenta to distinguish from PM's magentaBright
     }
   };
