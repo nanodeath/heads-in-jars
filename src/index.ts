@@ -325,7 +325,8 @@ async function main(): Promise<void> {
     spinner.succeed('Meeting setup complete!');
     
     // Display meeting information in a more structured format
-    console.log(chalk.green('\n╭───────────────────────────────────────────────────╮'));
+    console.log('\n')
+    console.log(chalk.green('╭───────────────────────────────────────────────────╮'));
     console.log(chalk.green('│              Meeting Information                  │'));
     console.log(chalk.green('╰───────────────────────────────────────────────────╯'));
     console.log(chalk.white(`📋 Topic: ${chalk.bold(meetingPurpose)}`));
@@ -343,16 +344,20 @@ async function main(): Promise<void> {
       });
     
     // Start the meeting with a more visual separator
-    console.log(chalk.green('\n╭───────────────────────────────────────────────────╮'));
+    console.log('\n')
+    console.log(chalk.green('╭───────────────────────────────────────────────────╮'));
     console.log(chalk.green('│                Meeting Starting                   │'));
-    console.log(chalk.green('╰───────────────────────────────────────────────────╯\n'));
+    console.log(chalk.green('╰───────────────────────────────────────────────────╯'));
+    console.log();
     await simulator.introduceParticipants();
     await simulator.runMeeting();
     
     // Meeting conclusion with matching visual style
-    console.log(chalk.green('\n╭───────────────────────────────────────────────────╮'));
+    console.log('\n');
+    console.log(chalk.green('╭───────────────────────────────────────────────────╮'));
     console.log(chalk.green('│               Meeting Concluded                   │'));
-    console.log(chalk.green('╰───────────────────────────────────────────────────╯\n'));
+    console.log(chalk.green('╰───────────────────────────────────────────────────╯'));
+    console.log();
     
     // Ask if user wants to save the transcript
     const saveTranscript = await new Confirm({
@@ -373,8 +378,6 @@ async function main(): Promise<void> {
       
       // Construct filename with date and topic (using .md extension for markdown)
       const filename = `meeting-${currentDate}-${topicSlug}.md`;
-      
-      console.log(chalk.cyan('\nGenerating meeting summary and transcript...'));
       
       // Create a spinner for the summary generation
       const summarySpinner = ora('Generating meeting summary...').start();
