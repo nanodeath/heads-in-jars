@@ -5,9 +5,11 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
+    "prebuild": "npm run format",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js",
+    "format": "npx @biomejs/biome check --write ./src --max-diagnostics=3",
     "validate": "tsc --noEmit && node dist/index.js --validate",
     "typecheck": "tsc --noEmit"
   },
@@ -30,6 +32,7 @@
     "ora": "^8.0.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "1.9.4",
     "@types/figlet": "^1.5.8",
     "@types/node": "^20.11.20",
     "typescript": "^5.3.3"

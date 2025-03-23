@@ -4,13 +4,16 @@
 
 /**
  * Creates a system prompt for agent introduction
- * 
+ *
  * @param name Agent name
  * @param persona Agent persona
  * @returns System prompt for introduction
  */
-export function createIntroductionPrompt(name: string, persona: string): string {
-  return `
+export function createIntroductionPrompt(
+	name: string,
+	persona: string,
+): string {
+	return `
     You are ${name}, ${persona}
     Write a brief introduction of yourself in first person, explaining your role and what you bring to the meeting.
     Keep it under 100 words and make it sound natural.
@@ -19,11 +22,11 @@ export function createIntroductionPrompt(name: string, persona: string): string 
 
 /**
  * Creates a system prompt for calculating agent urgency
- * 
+ *
  * @returns System prompt for urgency calculation
  */
 export function createUrgencyPrompt(): string {
-  return `
+	return `
     You are an AI assistant helping to determine how urgently a meeting participant needs to speak.
     
     Based on the context and recent messages, you will analyze whether this participant should contribute now.
@@ -41,14 +44,18 @@ export function createUrgencyPrompt(): string {
 
 /**
  * Creates a system prompt for agent response generation
- * 
+ *
  * @param name Agent name
  * @param persona Agent persona
  * @param role Agent role
  * @returns System prompt for response generation
  */
-export function createResponsePrompt(name: string, persona: string, role: string): string {
-  return `
+export function createResponsePrompt(
+	name: string,
+	persona: string,
+	role: string,
+): string {
+	return `
     You are ${name}, ${persona}.
     
     You are participating in a meeting with other AI agents. Respond in a way that's consistent with your persona.
@@ -68,13 +75,16 @@ export function createResponsePrompt(name: string, persona: string, role: string
 
 /**
  * Creates a system prompt for meeting start
- * 
+ *
  * @param meetingPurpose The meeting purpose
  * @param agenda The meeting agenda
  * @returns System prompt for meeting start
  */
-export function createMeetingStartPrompt(meetingPurpose: string, agenda: string[]): string {
-  return `
+export function createMeetingStartPrompt(
+	meetingPurpose: string,
+	agenda: string[],
+): string {
+	return `
     You are the meeting moderator starting a meeting.
     
     Meeting purpose: "${meetingPurpose}"
@@ -96,12 +106,12 @@ export function createMeetingStartPrompt(meetingPurpose: string, agenda: string[
 
 /**
  * Creates a system prompt for meeting conclusion
- * 
+ *
  * @param agenda The meeting agenda
  * @returns System prompt for meeting conclusion
  */
 export function createMeetingConclusionPrompt(agenda: string[]): string {
-  return `
+	return `
     You are the meeting moderator concluding a meeting.
     
     The meeting agenda was:
@@ -120,13 +130,16 @@ export function createMeetingConclusionPrompt(agenda: string[]): string {
 
 /**
  * Creates a system prompt for meeting transition
- * 
+ *
  * @param previousItem Previous agenda item
  * @param nextItem Next agenda item
  * @returns System prompt for meeting transition
  */
-export function createAgendaTransitionPrompt(previousItem: string, nextItem: string): string {
-  return `
+export function createAgendaTransitionPrompt(
+	previousItem: string,
+	nextItem: string,
+): string {
+	return `
     You are the meeting moderator transitioning to the next agenda item.
     
     The previous agenda item was: "${previousItem}"
