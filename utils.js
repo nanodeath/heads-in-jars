@@ -163,3 +163,67 @@ export function createMessage(role, content, agentId = null, agentName = null, a
       disclaimer: 'Cost is approximate and based on public pricing'
     };
   }
+  
+/**
+ * Execute an API call with retry logic for rate limiting and transient errors
+ * @param {Function} apiCall - Async function that makes the API call
+ * @param {string} actionDescription - Description of what the API call is doing
+ * @param {Object} options - Additional options
+ * @param {number} options.retryDelay - Delay in ms before retry (default: 10000ms)
+ * @param {Function} options.onRetry - Callback before retry
+ * @param {Function} options.fallbackFn - Function to call if all retries fail
+ * @returns {Promise<any>} The API response
+ */
+export async function withRetryLogic(apiCall, actionDescription, options = {}) {
+  const retryDelay = options.retryDelay || 10000; // Default to 10 seconds
+  const maxRetries = 1; // Try at most once more
+  
+  try {
+    // First attempt
+    return await apiCall();
+  } catch (error) {
+    // Check if it's a rate limit error (HTTP 429), a gateway error (HTTP 5xx), or empty response
+    const isRateLimitError = error.status === 429;
+    const isGatewayError = error.status >= 500 && error.status < 600;
+    const isEmptyResponse = error.message && error.message.includes('Empty response');
+    
+    if ((isRateLimitError || isGatewayError || isEmptyResponse) && maxRetries > 0) {
+      // Show retry message
+      console.log(`\n😴 ${error.message} while ${actionDescription}. Waiting ${retryDelay/1000} seconds before retry...`);
+      
+      // Call onRetry callback if provided
+      if (options.onRetry) {
+        options.onRetry(error);
+      }
+      
+      // Wait for specified delay
+      await sleep(retryDelay);
+      
+      try {
+        // Retry the API call
+        console.log(`🔄 Retrying ${actionDescription}...`);
+        return await apiCall();
+      } catch (retryError) {
+        // If the retry also fails, log and use fallback
+        console.error(`❌ Retry failed: ${retryError.message}`);
+        
+        if (options.fallbackFn) {
+          console.log(`⚠️ Using fallback for ${actionDescription}`);
+          return await options.fallbackFn(retryError);
+        }
+        
+        // Re-throw if no fallback
+        throw retryError;
+      }
+    } else {
+      // For other errors or if we've used all retries, check if fallback exists
+      if (options.fallbackFn) {
+        console.log(`⚠️ Error occurred, using fallback for ${actionDescription}`);
+        return await options.fallbackFn(error);
+      }
+      
+      // Re-throw if no fallback
+      throw error;
+    }
+  }
+}

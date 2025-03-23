@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { createMessage, debugLog, calculateCost } from './utils.js';
+import { createMessage, debugLog, calculateCost, withRetryLogic, sleep } from './utils.js';
 
 /**
  * Base class for AI agents
@@ -160,23 +160,43 @@ Based on this context, how urgently do you need to speak (1-5)?
     });
     
     try {
-      const response = await this.client.messages.create({
-        model: this.lowEndModel,
-        max_tokens: 10,
-        system: systemPrompt,
-        messages: [
-          { role: 'user', content: userContent }
-        ]
-      });
-      
-      // Better error handling for response structure
-      if (!response || !response.content || !response.content.length) {
-        throw new Error('Empty response received from API');
-      }
-      
-      if (!response.content[0] || typeof response.content[0].text !== 'string') {
-        throw new Error('Invalid response format from API');
-      }
+      // Use retry logic for API call
+      const response = await withRetryLogic(
+        // API call function
+        async () => {
+          const res = await this.client.messages.create({
+            model: this.lowEndModel,
+            max_tokens: 10,
+            system: systemPrompt,
+            messages: [
+              { role: 'user', content: userContent }
+            ]
+          });
+          
+          // Check response validity
+          if (!res || !res.content || !res.content.length) {
+            throw new Error('Empty response received from API');
+          }
+          
+          if (!res.content[0] || typeof res.content[0].text !== 'string') {
+            throw new Error('Invalid response format from API');
+          }
+          
+          return res;
+        },
+        // Description
+        `calculating urgency for ${this.name}`,
+        // Options
+        {
+          fallbackFn: async (error) => {
+            console.error(`Using fallback for ${this.name} urgency calculation`);
+            return { 
+              content: [{ text: "3" }],  // Default medium urgency
+              usage: { input_tokens: 0, output_tokens: 0 }
+            };
+          }
+        }
+      );
       
       // Debug log the response
       debugLog(`Urgency API response for ${this.name}`, response);
@@ -270,21 +290,46 @@ Based on this context, how urgently do you need to speak (1-5)?
     });
     
     try {
-      const response = await this.client.messages.create({
-        model: this.highEndModel,
-        max_tokens: this.maxTokens,
-        system: systemPrompt,
-        messages: formattedMessages
-      });
-      
-      // Better error handling for response structure
-      if (!response || !response.content || !response.content.length) {
-        throw new Error('Empty response received from API');
-      }
-      
-      if (!response.content[0] || typeof response.content[0].text !== 'string') {
-        throw new Error('Invalid response format from API');
-      }
+      // Use retry logic with user prompt fallback for response generation
+      const response = await withRetryLogic(
+        // API call function
+        async () => {
+          const res = await this.client.messages.create({
+            model: this.highEndModel,
+            max_tokens: this.maxTokens,
+            system: systemPrompt,
+            messages: formattedMessages
+          });
+          
+          // Check response validity
+          if (!res || !res.content || !res.content.length) {
+            throw new Error('Empty response received from API');
+          }
+          
+          if (!res.content[0] || typeof res.content[0].text !== 'string') {
+            throw new Error('Invalid response format from API');
+          }
+          
+          return res;
+        },
+        // Description
+        `generating response for ${this.name}`,
+        // Options
+        {
+          fallbackFn: async (error) => {
+            // Prompt the user for input
+            console.log(chalk.red(`\n⚠️ API error when generating response for ${this.name}: ${error.message}`));
+            
+            // Create a fallback response that explains the issue
+            const fallbackMessage = `I'd like to share my thoughts on this, but I'm having technical difficulty connecting to the API at the moment. Let's continue the discussion and I'll try again shortly.`;
+            
+            return { 
+              content: [{ text: fallbackMessage }],
+              usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 }
+            };
+          }
+        }
+      );
       
       // Log the response in debug mode
       debugLog(`Response API response for ${this.name}`, {
@@ -547,18 +592,51 @@ class ModeratorAgent extends Agent {
       Keep it concise and professional.
     `;
     
-    const response = await this.client.messages.create({
-      model: this.highEndModel,
-      max_tokens: 350,
-      system: systemPrompt,
-      messages: [
-        { 
-          role: 'user', 
-          content: 'Discussion transcript for the previous agenda item:\n' + 
-           currentItemMessages.map(m => `${m.agentId || 'User'}: ${m.content}`).join('\n')
+    // Use retry logic for agenda item transition
+    const response = await withRetryLogic(
+      // API call function
+      async () => {
+        const res = await this.client.messages.create({
+          model: this.highEndModel,
+          max_tokens: 350,
+          system: systemPrompt,
+          messages: [
+            { 
+              role: 'user', 
+              content: 'Discussion transcript for the previous agenda item:\n' + 
+               currentItemMessages.map(m => `${m.agentId || 'User'}: ${m.content}`).join('\n')
+            }
+          ]
+        });
+        
+        // Check response validity
+        if (!res || !res.content || !res.content.length) {
+          throw new Error('Empty response received from API');
         }
-      ]
-    });
+        
+        if (!res.content[0] || typeof res.content[0].text !== 'string') {
+          throw new Error('Invalid response format from API');
+        }
+        
+        return res;
+      },
+      // Description
+      `transitioning to agenda item "${this.agenda[this.currentAgendaItem]}"`,
+      // Options
+      {
+        fallbackFn: async (error) => {
+          // Create a generic transition as fallback
+          const fallbackMessage = `Thank you for the discussion on "${this.agenda[this.currentAgendaItem - 1]}". Let's move on to our next agenda item: "${this.agenda[this.currentAgendaItem]}".`;
+          
+          console.log(chalk.yellow(`\n⚠️ Using fallback transition due to API error: ${error.message}`));
+          
+          return { 
+            content: [{ text: fallbackMessage }],
+            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 }
+          };
+        }
+      }
+    );
     
     return response.content[0].text;
   }
@@ -586,18 +664,51 @@ class ModeratorAgent extends Agent {
     // Get the last portion of the conversation to summarize
     const recentMessages = conversation.slice(-Math.min(20, conversation.length));
     
-    const response = await this.client.messages.create({
-      model: this.highEndModel,
-      max_tokens: 400,
-      system: systemPrompt,
-      messages: [
-        { 
-          role: 'user', 
-          content: 'Meeting transcript excerpt:\n' + 
-           recentMessages.map(m => `${m.agentId || 'User'}: ${m.content}`).join('\n')
+    // Use retry logic for meeting conclusion
+    const response = await withRetryLogic(
+      // API call function
+      async () => {
+        const res = await this.client.messages.create({
+          model: this.highEndModel,
+          max_tokens: 400,
+          system: systemPrompt,
+          messages: [
+            { 
+              role: 'user', 
+              content: 'Meeting transcript excerpt:\n' + 
+               recentMessages.map(m => `${m.agentId || 'User'}: ${m.content}`).join('\n')
+            }
+          ]
+        });
+        
+        // Check response validity
+        if (!res || !res.content || !res.content.length) {
+          throw new Error('Empty response received from API');
         }
-      ]
-    });
+        
+        if (!res.content[0] || typeof res.content[0].text !== 'string') {
+          throw new Error('Invalid response format from API');
+        }
+        
+        return res;
+      },
+      // Description
+      "generating meeting conclusion",
+      // Options
+      {
+        fallbackFn: async (error) => {
+          // Create a generic conclusion as fallback
+          const fallbackMessage = `Thank you everyone for your participation in today's meeting. We've covered all our agenda items and had some productive discussions. I'll follow up with a more detailed summary later, but for now, let's consider the meeting adjourned.`;
+          
+          console.log(chalk.yellow(`\n⚠️ Using fallback meeting conclusion due to API error: ${error.message}`));
+          
+          return { 
+            content: [{ text: fallbackMessage }],
+            usage: { input_tokens: 0, output_tokens: fallbackMessage.length / 4 }
+          };
+        }
+      }
+    );
     
     return response.content[0].text;
   }
