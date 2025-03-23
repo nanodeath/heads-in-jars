@@ -18,6 +18,9 @@ import { createStatusUpdater } from '../ui/status.js';
 import { ConversationManager } from './conversation.js';
 import { selectNextSpeaker } from './speaker.js';
 import { saveTranscript as saveTranscriptToFile } from './transcript.js';
+import { createIntroductionPrompt } from '../api/prompts.js';
+import { createStreamingMessage } from '../api/streaming.js';
+import { MessageParams } from '../api/client.js';
 
 /**
  * Class for simulating a meeting with AI agents
@@ -157,14 +160,6 @@ export class MeetingSimulator {
       
       // Update overall status via debugLog
       debugLog(`Setting up ${personaInfo.name} [${personaInfo.role}] (${currentPersona}/${personaCount})`);
-      
-      // Create status updater for this specific agent
-      const agentStatusCallback = statusCallback ? 
-        (message: string) => statusCallback(`${personaInfo.name}: ${message}`) : 
-        null;
-      
-      // Pre-generate introductions with status updates
-      await agents[agentId].generateIntroduction(agentStatusCallback);
     }
     
     return agents;
@@ -172,6 +167,7 @@ export class MeetingSimulator {
 
   /**
    * Introduce all participants at the start of the meeting
+   * Each introduction is generated and shown in real-time, one at a time
    */
   async introduceParticipants(): Promise<void> {
     // Update meeting phase to introductions
@@ -180,19 +176,108 @@ export class MeetingSimulator {
     
     // Introduce moderator first
     if (this.moderator) {
+      // Create spinner for the moderator introduction
+      const spinnerColor = this.moderator.color.replace('Bright', '') || 'white';
+      const introSpinner = createSpinner(
+        `✋ ${this.moderator.name} is preparing an introduction...`,
+        spinnerColor
+      ).start();
+      
+      // Generate the introduction
       const moderatorIntro = await this.moderator.generateIntroduction();
+      
+      // Stop spinner and display introduction
+      introSpinner.stop();
       this.moderator.printMessage(moderatorIntro);
       this.conversationManager.addMessage('assistant', moderatorIntro, 'moderator');
+      
+      // Brief pause after moderator speaks
+      await sleep(1000);
     }
     
-    // Introduce other participants
+    // Introduce other participants one by one with streaming
     for (const [agentId, agent] of Object.entries(this.agents)) {
       if (agentId !== 'moderator') {
-        if (agent.introduction) {
-          agent.printMessage(agent.introduction);
-          this.conversationManager.addMessage('assistant', agent.introduction, agentId);
-          // Store the last speaker but don't enforce consecutive speaking rule during introductions
+        // Create spinner for agent introduction
+        const spinnerColor = agent.color.replace('Bright', '') || 'white';
+        const introSpinner = createSpinner(
+          `✋ ${agent.name} is preparing an introduction...`,
+          spinnerColor
+        ).start();
+        
+        // Flag to track if we've received the first chunk
+        let receivedFirstChunk = false;
+        
+        // Define a streaming callback function that will be called for each chunk
+        const streamCallback = (chunk: string) => {
+          // If this is the first chunk, stop the spinner and start streaming
+          if (!receivedFirstChunk) {
+            introSpinner.stop();
+            receivedFirstChunk = true;
+            // Print first chunk with the agent's name and role prefix
+            agent.printMessage(chunk, true, true);
+          } else {
+            // Print subsequent chunks without the prefix
+            agent.printMessage(chunk, true, false);
+          }
+        };
+        
+        try {
+          // System prompt for introduction
+          const systemPrompt = createIntroductionPrompt(agent.name, agent.persona);
+          
+          // Set up API parameters
+          const messageParams: MessageParams = {
+            model: agent.lowEndModel,
+            max_tokens: 150,
+            stream: true,
+            system: systemPrompt,
+            messages: [
+              { role: 'user', content: 'Please introduce yourself briefly.' }
+            ]
+          };
+          
+          // Generate the introduction with streaming
+          const intro = await createStreamingMessage(
+            agent.client,
+            messageParams,
+            streamCallback,
+            agent.name,
+            agent.role
+          );
+          
+          // If we didn't receive any chunks, display normally
+          if (!receivedFirstChunk) {
+            introSpinner.stop();
+            agent.printMessage(intro);
+          } else {
+            // If we were streaming, complete the message
+            agent.completeStreamedMessage();
+          }
+          
+          // Store the introduction for later reference
+          agent.introduction = intro;
+          
+          // Add message to conversation history
+          this.conversationManager.addMessage('assistant', intro, agentId);
+          
+          // Update last speaker
           this.lastNonModeratorSpeaker = agentId;
+          
+          // Brief pause between introductions
+          await sleep(1000);
+          
+        } catch (error: any) {
+          // Handle errors
+          introSpinner.stop();
+          console.error(`Error generating introduction for ${agent.name}:`, error.message);
+          const fallbackIntro = `Hello, I'm ${agent.name}. [Error generating introduction: ${error.message}]`;
+          agent.introduction = fallbackIntro;
+          agent.printMessage(fallbackIntro);
+          this.conversationManager.addMessage('assistant', fallbackIntro, agentId);
+          
+          // Brief pause after error
+          await sleep(500);
         }
       }
     }
