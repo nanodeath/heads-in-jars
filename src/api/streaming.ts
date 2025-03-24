@@ -3,7 +3,6 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
-import type { MessageCreateParamsStreaming } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { TokenUsage } from '../types.js';
 import { removeNamePrefix } from '../utils/conversation.js';
 import { debugLog } from '../utils/formatting.js';
@@ -34,7 +33,11 @@ export async function createStreamingMessage(
 
     // Process each chunk as it arrives
     for await (const messageStreamEvent of stream) {
-      if (messageStreamEvent.type === 'content_block_delta' && messageStreamEvent.delta?.text) {
+      if (
+        messageStreamEvent.type === 'content_block_delta' &&
+        messageStreamEvent.delta?.type === 'text_delta' &&
+        messageStreamEvent.delta?.text
+      ) {
         let chunk = messageStreamEvent.delta.text;
 
         // Check if this is the first chunk and contains name prefixes to strip

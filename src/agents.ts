@@ -92,13 +92,17 @@ export class Agent {
         throw new Error('Empty response received from API');
       }
 
-      if (!response.content[0] || typeof response.content[0].text !== 'string') {
+      const last = response.content[response.content.length - 1];
+      let text: string;
+      if (last.type === 'text') {
+        text = last.text;
+      } else {
         throw new Error('Invalid response format from API');
       }
 
       // Log the response in debug mode
       debugLog(`Introduction API response for ${this.name}`, {
-        content: response.content[0].text,
+        content: text,
         usage: response.usage,
       });
 
@@ -113,7 +117,7 @@ export class Agent {
         totalCost: `$${costEstimate.totalCost}`,
       });
 
-      this.introduction = response.content[0].text;
+      this.introduction = text;
       return this.introduction;
     } catch (error: unknown) {
       console.error(`Error generating introduction for ${this.name}:`, error);
@@ -182,16 +186,18 @@ Based on this context, how urgently do you need to speak (1-5)?
             messages: [{ role: 'user', content: userContent }],
           });
 
-          // Check response validity
-          if (!res || !res.content || !res.content.length) {
-            throw new Error('Empty response received from API');
-          }
-
-          if (!res.content[0] || typeof res.content[0].text !== 'string') {
+          const last = res.content[res.content.length - 1];
+          let text: string;
+          if (last.type === 'text') {
+            text = last.text;
+          } else {
             throw new Error('Invalid response format from API');
           }
 
-          return res;
+          return {
+            text,
+            usage: res.usage,
+          };
         },
         // Description
         `calculating urgency for ${this.name}`,
@@ -200,7 +206,7 @@ Based on this context, how urgently do you need to speak (1-5)?
           fallbackFn: async (error) => {
             console.error(`Using fallback for ${this.name} urgency calculation`);
             return {
-              content: [{ text: '3' }], // Default medium urgency
+              text: '3', // Default medium urgency
               usage: { input_tokens: 0, output_tokens: 0 } as TokenUsage,
             };
           },
@@ -222,7 +228,7 @@ Based on this context, how urgently do you need to speak (1-5)?
       });
 
       // Extract just the number from the response
-      const urgencyText = response.content[0].text.trim();
+      const urgencyText = response.text.trim();
       let urgency = Number.parseFloat(urgencyText) || 3.0;
 
       // Clamp between 1-5
@@ -316,7 +322,11 @@ Based on this context, how urgently do you need to speak (1-5)?
 
           // Process each chunk as it arrives
           for await (const messageStreamEvent of stream) {
-            if (messageStreamEvent.type === 'content_block_delta' && messageStreamEvent.delta?.text) {
+            if (
+              messageStreamEvent.type === 'content_block_delta' &&
+              messageStreamEvent.delta?.type === 'text_delta' &&
+              messageStreamEvent.delta?.text
+            ) {
               let chunk = messageStreamEvent.delta.text;
 
               // Check if this is the first chunk and contains name prefixes to strip
@@ -387,19 +397,16 @@ Based on this context, how urgently do you need to speak (1-5)?
               messages: formattedMessages,
             });
 
-            // Check response validity
-            if (!res || !res.content || !res.content.length) {
-              throw new Error('Empty response received from API');
-            }
-
-            if (!res.content[0] || typeof res.content[0].text !== 'string') {
+            const last = res.content[res.content.length - 1];
+            let text: string;
+            if (last.type === 'text') {
+              text = last.text;
+            } else {
               throw new Error('Invalid response format from API');
             }
 
             // Clean up the response to remove any self-references
-            if (res.content[0].text) {
-              let text = res.content[0].text;
-
+            if (text) {
               // Check for common patterns of the agent referring to themselves
               const selfReferencePatterns = [
                 `${this.name}: `,
@@ -415,14 +422,15 @@ Based on this context, how urgently do you need to speak (1-5)?
                 if (text.startsWith(pattern)) {
                   text = text.substring(pattern.length);
                   debugLog(`Stripped self-reference prefix from response: "${pattern}"`);
-                  // Update the response object with the cleaned text
-                  res.content[0].text = text;
                   break;
                 }
               }
             }
 
-            return res;
+            return {
+              text,
+              usage: res.usage,
+            };
           },
           // Description
           `generating response for ${this.name}`,
@@ -436,7 +444,7 @@ Based on this context, how urgently do you need to speak (1-5)?
               const fallbackMessage = `I'd like to share my thoughts on this, but I'm having technical difficulty connecting to the API at the moment. Let's continue the discussion and I'll try again shortly.`;
 
               return {
-                content: [{ text: fallbackMessage }],
+                text: fallbackMessage,
                 usage: {
                   input_tokens: 0,
                   output_tokens: fallbackMessage.length / 4,
@@ -448,7 +456,7 @@ Based on this context, how urgently do you need to speak (1-5)?
 
         // Log the response in debug mode
         debugLog(`Response API response for ${this.name}`, {
-          content: response.content[0].text,
+          content: response.text,
           usage: response.usage,
         });
 
@@ -463,7 +471,7 @@ Based on this context, how urgently do you need to speak (1-5)?
           totalCost: `$${costEstimate.totalCost}`,
         });
 
-        return response.content[0].text;
+        return response.text;
       }
     } catch (error: unknown) {
       console.error(`Error generating response for ${this.name}:`, error);
@@ -590,8 +598,13 @@ export class ModeratorAgent extends Agent {
         ],
       });
 
-      // Extract JSON array from response
-      const responseText = response.content[0].text;
+      const last = response.content[response.content.length - 1];
+      let responseText: string;
+      if (last.type === 'text') {
+        responseText = last.text;
+      } else {
+        throw new Error('Invalid response format from API');
+      }
 
       // Find JSON array in the text (handle cases where Claude adds explanation)
       const jsonMatch = responseText.match(/\[(.*)\]/s);
@@ -684,7 +697,15 @@ export class ModeratorAgent extends Agent {
     });
 
     this.currentAgendaItem = 0;
-    return response.content[0].text;
+    const last = response.content[response.content.length - 1];
+    let text: string;
+    if (last.type === 'text') {
+      text = last.text;
+    } else {
+      throw new Error('Invalid response format from API');
+    }
+
+    return text;
   }
 
   /**
@@ -752,16 +773,12 @@ export class ModeratorAgent extends Agent {
           ],
         });
 
-        // Check response validity
-        if (!res || !res.content || !res.content.length) {
-          throw new Error('Empty response received from API');
+        const last = res.content[res.content.length - 1];
+        let text: string;
+        if (last.type === 'text') {
+          return last.text;
         }
-
-        if (!res.content[0] || typeof res.content[0].text !== 'string') {
-          throw new Error('Invalid response format from API');
-        }
-
-        return res;
+        throw new Error('Invalid response format from API');
       },
       // Description
       `transitioning to agenda item "${this.agenda[this.currentAgendaItem]}"`,
@@ -773,18 +790,12 @@ export class ModeratorAgent extends Agent {
 
           console.log(chalk.yellow(`\n⚠️ Using fallback transition due to API error: ${error.message}`));
 
-          return {
-            content: [{ text: fallbackMessage }],
-            usage: {
-              input_tokens: 0,
-              output_tokens: fallbackMessage.length / 4,
-            } as TokenUsage,
-          };
+          return fallbackMessage;
         },
       },
     );
 
-    return response.content[0].text;
+    return response;
   }
 
   /**
@@ -828,16 +839,15 @@ export class ModeratorAgent extends Agent {
           ],
         });
 
-        // Check response validity
-        if (!res || !res.content || !res.content.length) {
-          throw new Error('Empty response received from API');
-        }
-
-        if (!res.content[0] || typeof res.content[0].text !== 'string') {
+        const last = res.content[res.content.length - 1];
+        let text: string;
+        if (last.type === 'text') {
+          text = last.text;
+        } else {
           throw new Error('Invalid response format from API');
         }
 
-        return res;
+        return text;
       },
       // Description
       'generating meeting conclusion',
@@ -849,18 +859,12 @@ export class ModeratorAgent extends Agent {
 
           console.log(chalk.yellow(`\n⚠️ Using fallback meeting conclusion due to API error: ${error.message}`));
 
-          return {
-            content: [{ text: fallbackMessage }],
-            usage: {
-              input_tokens: 0,
-              output_tokens: fallbackMessage.length / 4,
-            } as TokenUsage,
-          };
+          return fallbackMessage;
         },
       },
     );
 
-    return response.content[0].text;
+    return response;
   }
 
   /**
@@ -912,16 +916,15 @@ export class ModeratorAgent extends Agent {
           ],
         });
 
-        // Check response validity
-        if (!res || !res.content || !res.content.length) {
-          throw new Error('Empty response received from API');
-        }
-
-        if (!res.content[0] || typeof res.content[0].text !== 'string') {
+        const last = res.content[res.content.length - 1];
+        let text: string;
+        if (last.type === 'text') {
+          text = last.text;
+        } else {
           throw new Error('Invalid response format from API');
         }
 
-        return res;
+        return text;
       },
       // Description
       'generating detailed meeting summary',
@@ -933,18 +936,12 @@ export class ModeratorAgent extends Agent {
 
           console.log(chalk.yellow(`\n⚠️ Using fallback meeting summary due to API error: ${error.message}`));
 
-          return {
-            content: [{ text: fallbackMessage }],
-            usage: {
-              input_tokens: 0,
-              output_tokens: fallbackMessage.length / 4,
-            } as TokenUsage,
-          };
+          return fallbackMessage;
         },
       },
     );
 
-    return response.content[0].text;
+    return response;
   }
 
   /**
@@ -1019,7 +1016,13 @@ export class ModeratorAgent extends Agent {
         ],
       });
 
-      let nextSpeaker = response.content[0].text.trim();
+      const last = response.content[response.content.length - 1];
+      let nextSpeaker: string;
+      if (last.type === 'text') {
+        nextSpeaker = last.text.trim();
+      } else {
+        throw new Error('Invalid response format from API');
+      }
 
       // Clean up response to just get the agent ID
       if (!agents[nextSpeaker]) {
@@ -1114,8 +1117,11 @@ export class ModeratorAgent extends Agent {
         ],
       });
 
-      const decision = response.content[0].text.trim().toUpperCase();
-      return decision.includes('YES');
+      const last = response.content[response.content.length - 1];
+      if (last.type === 'text') {
+        return last.text.trim().toUpperCase().includes('YES');
+      }
+      throw new Error('Invalid response format from API');
     } catch (error: unknown) {
       console.error('Error deciding on agenda progression:', error);
       // Default to continuing the current item

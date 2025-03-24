@@ -88,7 +88,11 @@ export class ModeratorAgent extends Agent {
       });
 
       // Extract JSON array from response
-      const responseText = response.content[0].text;
+      let responseText = '';
+      const last = response.content[response.content.length - 1];
+      if (last.type === 'text') {
+        responseText = last.text.trim();
+      }
 
       // Find JSON array in the text (handle cases where Claude adds explanation)
       const jsonMatch = responseText.match(/\[(.*)\]/s);
@@ -234,11 +238,10 @@ export class ModeratorAgent extends Agent {
           throw new Error('Empty response received from API');
         }
 
-        if (!res.content[0] || typeof res.content[0].text !== 'string') {
-          throw new Error('Invalid response format from API');
-        }
-
-        return res;
+        return {
+          ...res,
+          content: res.content.filter((c) => c.type === 'text'),
+        };
       },
       // Description
       `transitioning to agenda item "${this.agenda[this.currentAgendaItem]}"`,
@@ -291,11 +294,10 @@ export class ModeratorAgent extends Agent {
           throw new Error('Empty response received from API');
         }
 
-        if (!res.content[0] || typeof res.content[0].text !== 'string') {
-          throw new Error('Invalid response format from API');
-        }
-
-        return res;
+        return {
+          ...res,
+          content: res.content.filter((c) => c.type === 'text'),
+        };
       },
       // Description
       'generating meeting conclusion',
@@ -371,11 +373,10 @@ export class ModeratorAgent extends Agent {
           throw new Error('Empty response received from API');
         }
 
-        if (!res.content[0] || typeof res.content[0].text !== 'string') {
-          throw new Error('Invalid response format from API');
-        }
-
-        return res;
+        return {
+          ...res,
+          content: res.content.filter((c) => c.type === 'text'),
+        };
       },
       // Description
       'generating detailed meeting summary',
@@ -470,7 +471,11 @@ export class ModeratorAgent extends Agent {
         ],
       });
 
-      let nextSpeaker = response.content[0].text.trim();
+      let nextSpeaker = 'tbd';
+      const last = response.content[response.content.length - 1];
+      if (last.type === 'text') {
+        nextSpeaker = last.text.trim();
+      }
 
       // Clean up response to just get the agent ID
       if (!agents[nextSpeaker]) {
@@ -565,8 +570,11 @@ export class ModeratorAgent extends Agent {
         ],
       });
 
-      const decision = response.content[0].text.trim().toUpperCase();
-      return decision.includes('YES');
+      const last = response.content[response.content.length - 1];
+      if (last.type === 'text') {
+        return last.text.trim().toUpperCase().includes('YES');
+      }
+      return false;
     } catch (error: unknown) {
       console.error('Error deciding on agenda progression:', error);
       // Default to continuing the current item

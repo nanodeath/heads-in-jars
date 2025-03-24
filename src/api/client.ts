@@ -52,11 +52,10 @@ export async function createMessage(
         throw new Error('Empty response received from API');
       }
 
-      if (!res.content[0] || typeof res.content[0].text !== 'string') {
-        throw new Error('Invalid response format from API');
-      }
-
-      return res;
+      return {
+        ...res,
+        content: res.content.filter((c) => c.type === 'text'),
+      };
     },
     // Description
     actionDescription,
@@ -66,7 +65,7 @@ export async function createMessage(
           fallbackFn: async (error) => {
             debugLog(`Using fallback for ${actionDescription}: ${error.message}`);
             return {
-              content: [{ text: fallbackMessage }],
+              content: [{ text: fallbackMessage, type: 'text' }],
               usage: {
                 input_tokens: 0,
                 output_tokens: fallbackMessage.length / 4,
