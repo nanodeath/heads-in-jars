@@ -22,8 +22,8 @@ jobs:
     - name: Install Dependencies
       run: npm ci
     
-    - name: Validate
-      run: npm run validate
+    - name: Validate in CI
+      run: npm run ci
     
-    - name: TypeScript Build
+    - name: Full Build
       run: npm run build

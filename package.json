@@ -9,8 +9,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js",
-    "format": "npx @biomejs/biome check --write ./src --max-diagnostics=3",
-    "validate": "tsc --noEmit && node dist/index.js --validate && node_modules/.bin/biome ci ./src",
+    "format": "node_modules/.bin/biome check --write ./src --max-diagnostics=0",
+    "ci": "tsc --noEmit && node_modules/.bin/biome ci ./src",
+    "validate": "node dist/index.js --validate && npm run ci",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
