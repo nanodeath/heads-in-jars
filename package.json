@@ -10,7 +10,7 @@
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js",
     "format": "npx @biomejs/biome check --write ./src --max-diagnostics=3",
-    "validate": "tsc --noEmit && node dist/index.js --validate",
+    "validate": "tsc --noEmit && node dist/index.js --validate && node_modules/.bin/biome ci ./src",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
