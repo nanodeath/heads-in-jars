@@ -4,18 +4,14 @@
 
 import chalk from 'chalk';
 import Enquirer from 'enquirer';
-import ora from 'ora';
 // Access Input class dynamically
 // biome-ignore lint/suspicious/noExplicitAny: Enquirer doesn't have proper types
 const Input = (Enquirer as any).Input;
-
-import type Anthropic from '@anthropic-ai/sdk';
 import { Agent } from '../agents/agent.js';
 import { ModeratorAgent } from '../agents/moderator.js';
-import type { MessageParams } from '../api/client.js';
+import type { AnthropicClient, MessageParams } from '../api/client.js';
 import { createIntroductionPrompt } from '../api/prompts.js';
-import { createStreamingMessage } from '../api/streaming.js';
-import { type MeetingSimulatorOptions, Message, type PersonaDirectory, type PersonaInfo } from '../types.js';
+import type { MeetingSimulatorOptions, PersonaDirectory, PersonaInfo } from '../types.js';
 import { displaySectionHeader } from '../ui/messaging.js';
 import { createSpinner } from '../ui/spinner.js';
 import { createStatusUpdater } from '../ui/status.js';
@@ -28,7 +24,7 @@ import { saveTranscript as saveTranscriptToFile } from './transcript.js';
  * Class for simulating a meeting with AI agents
  */
 export class MeetingSimulator {
-  client: Anthropic;
+  client: AnthropicClient;
   agenda: string[];
   userInvolvement: string;
   lowEndModel: string;
@@ -230,19 +226,12 @@ export class MeetingSimulator {
           const messageParams: MessageParams = {
             model: agent.lowEndModel,
             max_tokens: 150,
-            stream: true,
             system: systemPrompt,
             messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
           };
 
           // Generate the introduction with streaming
-          const intro = await createStreamingMessage(
-            agent.client,
-            { ...messageParams, stream: true },
-            streamCallback,
-            agent.name,
-            agent.role,
-          );
+          const intro = await this.client.createStreamingMessage(messageParams, streamCallback);
 
           // If we didn't receive any chunks, display normally
           if (!receivedFirstChunk) {

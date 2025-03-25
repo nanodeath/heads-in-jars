@@ -9,7 +9,6 @@ import figlet from 'figlet';
 // biome-ignore lint/suspicious/noExplicitAny: Enquirer doesn't have proper types
 const { Confirm, Input, Select, Form, MultiSelect } = Enquirer as any;
 import fs from 'node:fs';
-import path from 'node:path';
 import ora from 'ora';
 
 // Load environment variables
@@ -33,25 +32,14 @@ const agendaFilePath = agendaFileArg ? agendaFileArg.split('=')[1] : null;
 global.isDebugMode = isDebugMode;
 
 // Import agent and meeting modules
-import { Agent, ModeratorAgent } from './agents/index.js';
+import { Agent } from './agents/index.js';
 import { MeetingSimulator } from './meeting/index.js';
 import { availablePersonas } from './personas.js';
 
 // Import UI utilities
 import { debugLog } from './utils/formatting.js';
 
-// Import time utilities
-import { formatDuration, sleep } from './utils/time.js';
-
-// Import formatting utilities
-import { containsAny, generateId, truncateText } from './utils/formatting.js';
-
-// Import cost utilities
-import { calculateCost } from './utils/costs.js';
-
-// Import conversation utilities
-import { createMessage } from './utils/conversation.js';
-
+import { AnthropicClient } from './api/index.js';
 // Import types
 import type { PersonaDirectory, PersonaInfo } from './types.js';
 
@@ -111,7 +99,7 @@ function validateImports(): boolean {
     persona: 'Test persona',
     role: 'Dev',
     color: chalk.blue,
-    client: new Anthropic(),
+    client: new AnthropicClient(new Anthropic()),
   });
   console.log('✓ agents.ts: Agent, ModeratorAgent');
 
@@ -165,9 +153,11 @@ async function main(): Promise<void> {
     }
 
     // Create Anthropic client
-    const client = new Anthropic({
-      apiKey: apiKey,
-    });
+    const client = new AnthropicClient(
+      new Anthropic({
+        apiKey,
+      }),
+    );
 
     // Select user involvement level
     const involvementPrompt = await new Select({

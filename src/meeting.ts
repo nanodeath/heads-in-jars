@@ -6,8 +6,8 @@ import ora from 'ora';
 // Access Input class dynamically
 // biome-ignore lint/suspicious/noExplicitAny: Enquirer doesn't have proper types
 const Input = (Enquirer as any).Input;
-import type Anthropic from '@anthropic-ai/sdk';
 import { Agent, ModeratorAgent } from './agents.js';
+import type { AnthropicClient } from './api/client.js';
 import type { MeetingSimulatorOptions, Message, PersonaDirectory, PersonaInfo } from './types.js';
 import { createMessage, sleep } from './utils.js';
 import { debugLog } from './utils/index.js';
@@ -16,7 +16,7 @@ import { debugLog } from './utils/index.js';
  * Class for simulating a meeting with AI agents
  */
 export class MeetingSimulator {
-  client: Anthropic;
+  client: AnthropicClient;
   agenda: string[];
   userInvolvement: string;
   lowEndModel: string;

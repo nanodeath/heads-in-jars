@@ -1,6 +1,5 @@
-import type Anthropic from '@anthropic-ai/sdk';
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import chalk, { type ChalkInstance } from 'chalk';
+import type { AnthropicClient, MessageParam } from './api/client.js';
 import type { AgentOptions, Message, ModeratorOptions, PersonaDirectory, PersonaInfo, TokenUsage } from './types.js';
 import { calculateCost, withRetryLogic } from './utils.js';
 import { debugLog } from './utils/index.js';
@@ -14,7 +13,7 @@ export class Agent {
   persona: string;
   role: string;
   color: ChalkInstance;
-  client: Anthropic;
+  client: AnthropicClient;
   lowEndModel: string;
   highEndModel: string;
   maxTokens: number;
@@ -80,12 +79,15 @@ export class Agent {
 
     try {
       updateStatus(`Contacting AI service for ${this.name}'s introduction...`);
-      const response = await this.client.messages.create({
-        model: this.lowEndModel,
-        max_tokens: 150,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
-      });
+      const response = await this.client.createMessage(
+        {
+          model: this.lowEndModel,
+          max_tokens: 150,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
+        },
+        'Getting introduction',
+      );
 
       // Better error handling for response structure
       if (!response || !response.content || !response.content.length) {
@@ -93,12 +95,7 @@ export class Agent {
       }
 
       const last = response.content[response.content.length - 1];
-      let text: string;
-      if (last.type === 'text') {
-        text = last.text;
-      } else {
-        throw new Error('Invalid response format from API');
-      }
+      const text = last.text;
 
       // Log the response in debug mode
       debugLog(`Introduction API response for ${this.name}`, {
@@ -179,23 +176,20 @@ Based on this context, how urgently do you need to speak (1-5)?
       const response = await withRetryLogic(
         // API call function
         async () => {
-          const res = await this.client.messages.create({
-            model: this.lowEndModel,
-            max_tokens: 10,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: userContent }],
-          });
+          const res = await this.client.createMessage(
+            {
+              model: this.lowEndModel,
+              max_tokens: 10,
+              system: systemPrompt,
+              messages: [{ role: 'user', content: userContent }],
+            },
+            'Calculating agent response urgency',
+          );
 
           const last = res.content[res.content.length - 1];
-          let text: string;
-          if (last.type === 'text') {
-            text = last.text;
-          } else {
-            throw new Error('Invalid response format from API');
-          }
 
           return {
-            text,
+            text: last.text,
             usage: res.usage,
           };
         },
@@ -258,7 +252,7 @@ Based on this context, how urgently do you need to speak (1-5)?
   /**
    * Generate a response based on the conversation context
    */
-  async generateResponse(conversation: Message[], onStream?: (chunk: string) => void): Promise<string> {
+  async generateResponse(conversation: Message[], onStream: (chunk: string) => void): Promise<string> {
     // Reset the count of messages since last spoken
     this.messagesSinceLastSpoken = 0;
 
@@ -305,174 +299,44 @@ Based on this context, how urgently do you need to speak (1-5)?
     });
 
     try {
-      // Use streaming or standard API call based on whether a callback was provided
-      if (onStream) {
-        // Use streaming API for real-time output
-        let fullResponse = '';
-
-        try {
-          // Create streaming request
-          const stream = await this.client.messages.create({
-            model: this.highEndModel,
-            max_tokens: this.maxTokens,
-            system: systemPrompt,
-            messages: formattedMessages,
-            stream: true,
-          });
-
-          // Process each chunk as it arrives
-          for await (const messageStreamEvent of stream) {
-            if (
-              messageStreamEvent.type === 'content_block_delta' &&
-              messageStreamEvent.delta?.type === 'text_delta' &&
-              messageStreamEvent.delta?.text
-            ) {
-              let chunk = messageStreamEvent.delta.text;
-
-              // Check if this is the first chunk and contains name prefixes to strip
-              if (fullResponse === '') {
-                // Check for common patterns of the agent referring to themselves
-                const selfReferencePatterns = [
-                  `${this.name}: `,
-                  `${this.name} [${this.role}]: `,
-                  `${this.name}[${this.role}]: `,
-                  `${this.name}[${this.role}]:`,
-                  `${this.name} [${this.role}]:`,
-                  `${this.name}, ${this.role}: `,
-                ];
-
-                // Find and remove any self-reference prefix
-                for (const pattern of selfReferencePatterns) {
-                  if (chunk.startsWith(pattern)) {
-                    chunk = chunk.substring(pattern.length);
-                    debugLog(`Stripped self-reference prefix from response: "${pattern}"`);
-                    break;
-                  }
-                }
-              }
-
-              fullResponse += chunk;
-              onStream(chunk);
-            }
-          }
-
-          // Calculate approximate token usage for logging purposes
-          // This is an approximation since we don't get actual token counts with streaming
-          const approximateUsage = {
-            input_tokens: formattedMessages.reduce((acc, msg) => acc + msg.content.length / 4, 0),
-            output_tokens: fullResponse.length / 4,
-          } as TokenUsage;
-
-          // Log the response in debug mode
-          debugLog(`Streaming response for ${this.name} completed`, {
-            content: fullResponse,
-            approximateUsage,
-          });
-
-          // Calculate and log approximate cost estimate
-          const costEstimate = calculateCost(this.highEndModel, approximateUsage);
-          debugLog(`💰 Approximate cost estimate for ${this.name} streaming response:`, {
-            model: this.highEndModel,
-            inputTokens: costEstimate.inputTokens,
-            outputTokens: costEstimate.outputTokens,
-            inputCost: `$${costEstimate.inputCost}`,
-            outputCost: `$${costEstimate.outputCost}`,
-            totalCost: `$${costEstimate.totalCost}`,
-          });
-
-          return fullResponse;
-        } catch (error: unknown) {
-          console.error(`Error generating streaming response for ${this.name}:`, error);
-          return `[Error generating response: ${error instanceof Error ? error.message : error}]`;
-        }
-      } else {
-        // Use non-streaming API with retry logic for non-streamed responses
-        const response = await withRetryLogic(
-          // API call function
-          async () => {
-            const res = await this.client.messages.create({
-              model: this.highEndModel,
-              max_tokens: this.maxTokens,
-              system: systemPrompt,
-              messages: formattedMessages,
-            });
-
-            const last = res.content[res.content.length - 1];
-            let text: string;
-            if (last.type === 'text') {
-              text = last.text;
-            } else {
-              throw new Error('Invalid response format from API');
-            }
-
-            // Clean up the response to remove any self-references
-            if (text) {
-              // Check for common patterns of the agent referring to themselves
-              const selfReferencePatterns = [
-                `${this.name}: `,
-                `${this.name} [${this.role}]: `,
-                `${this.name}[${this.role}]: `,
-                `${this.name}[${this.role}]:`,
-                `${this.name} [${this.role}]:`,
-                `${this.name}, ${this.role}: `,
-              ];
-
-              // Find and remove any self-reference prefix
-              for (const pattern of selfReferencePatterns) {
-                if (text.startsWith(pattern)) {
-                  text = text.substring(pattern.length);
-                  debugLog(`Stripped self-reference prefix from response: "${pattern}"`);
-                  break;
-                }
-              }
-            }
-
-            return {
-              text,
-              usage: res.usage,
-            };
-          },
-          // Description
-          `generating response for ${this.name}`,
-          // Options
-          {
-            fallbackFn: async (error) => {
-              // Prompt the user for input
-              console.log(chalk.red(`\n⚠️ API error when generating response for ${this.name}: ${error.message}`));
-
-              // Create a fallback response that explains the issue
-              const fallbackMessage = `I'd like to share my thoughts on this, but I'm having technical difficulty connecting to the API at the moment. Let's continue the discussion and I'll try again shortly.`;
-
-              return {
-                text: fallbackMessage,
-                usage: {
-                  input_tokens: 0,
-                  output_tokens: fallbackMessage.length / 4,
-                } as TokenUsage,
-              };
-            },
-          },
-        );
-
-        // Log the response in debug mode
-        debugLog(`Response API response for ${this.name}`, {
-          content: response.text,
-          usage: response.usage,
-        });
-
-        // Calculate and log cost estimate
-        const costEstimate = calculateCost(this.highEndModel, response.usage);
-        debugLog(`💰 Cost estimate for ${this.name} response generation:`, {
+      // Create streaming request
+      const fullResponse = await this.client.createStreamingMessage(
+        {
           model: this.highEndModel,
-          inputTokens: costEstimate.inputTokens,
-          outputTokens: costEstimate.outputTokens,
-          inputCost: `$${costEstimate.inputCost}`,
-          outputCost: `$${costEstimate.outputCost}`,
-          totalCost: `$${costEstimate.totalCost}`,
-        });
+          max_tokens: this.maxTokens,
+          system: systemPrompt,
+          messages: formattedMessages,
+        },
+        (chunk) => {
+          onStream(chunk);
+        },
+      );
 
-        return response.text;
-      }
+      // Calculate approximate token usage for logging purposes
+      // This is an approximation since we don't get actual token counts with streaming
+      const approximateUsage = {
+        input_tokens: formattedMessages.reduce((acc, msg) => acc + msg.content.length / 4, 0),
+        output_tokens: fullResponse.length / 4,
+      } as TokenUsage;
+
+      // Log the response in debug mode
+      debugLog(`Streaming response for ${this.name} completed`, {
+        content: fullResponse,
+        approximateUsage,
+      });
+
+      // Calculate and log approximate cost estimate
+      const costEstimate = calculateCost(this.highEndModel, approximateUsage);
+      debugLog(`💰 Approximate cost estimate for ${this.name} streaming response:`, {
+        model: this.highEndModel,
+        inputTokens: costEstimate.inputTokens,
+        outputTokens: costEstimate.outputTokens,
+        inputCost: `$${costEstimate.inputCost}`,
+        outputCost: `$${costEstimate.outputCost}`,
+        totalCost: `$${costEstimate.totalCost}`,
+      });
+
+      return fullResponse;
     } catch (error: unknown) {
       console.error(`Error generating response for ${this.name}:`, error);
       return `[Error generating response: ${error instanceof Error ? error.message : error}]`;
@@ -586,25 +450,23 @@ export class ModeratorAgent extends Agent {
     `;
 
     try {
-      const response = await this.client.messages.create({
-        model: this.highEndModel,
-        max_tokens: 500,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: 'Select the participants for this meeting.',
-          },
-        ],
-      });
+      const response = await this.client.createMessage(
+        {
+          model: this.highEndModel,
+          max_tokens: 500,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: 'Select the participants for this meeting.',
+            },
+          ],
+        },
+        'Recommending participants',
+      );
 
       const last = response.content[response.content.length - 1];
-      let responseText: string;
-      if (last.type === 'text') {
-        responseText = last.text;
-      } else {
-        throw new Error('Invalid response format from API');
-      }
+      const responseText = last.text;
 
       // Find JSON array in the text (handle cases where Claude adds explanation)
       const jsonMatch = responseText.match(/\[(.*)\]/s);
@@ -689,23 +551,18 @@ export class ModeratorAgent extends Agent {
       IMPORTANT: DO NOT include narrative actions like "*looks around the room*", "*nods*", etc. Just speak directly without these narrative descriptors.
     `;
 
-    const response = await this.client.messages.create({
-      model: this.highEndModel,
-      max_tokens: 300,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: 'Please start the meeting.' }],
-    });
+    const response = await this.client.createMessage(
+      {
+        model: this.highEndModel,
+        max_tokens: 300,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: 'Please start the meeting.' }],
+      },
+      'Starting the meeting',
+    );
 
     this.currentAgendaItem = 0;
-    const last = response.content[response.content.length - 1];
-    let text: string;
-    if (last.type === 'text') {
-      text = last.text;
-    } else {
-      throw new Error('Invalid response format from API');
-    }
-
-    return text;
+    return response.content[response.content.length - 1].text;
   }
 
   /**
@@ -759,26 +616,24 @@ export class ModeratorAgent extends Agent {
     const response = await withRetryLogic(
       // API call function
       async () => {
-        const res = await this.client.messages.create({
-          model: this.highEndModel,
-          max_tokens: 350,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: `Discussion transcript for the previous agenda item:\n${currentItemMessages
-                .map((m) => `${m.agentId || 'User'}: ${m.content}`)
-                .join('\n')}`,
-            },
-          ],
-        });
+        const res = await this.client.createMessage(
+          {
+            model: this.highEndModel,
+            max_tokens: 350,
+            system: systemPrompt,
+            messages: [
+              {
+                role: 'user',
+                content: `Discussion transcript for the previous agenda item:\n${currentItemMessages
+                  .map((m) => `${m.agentId || 'User'}: ${m.content}`)
+                  .join('\n')}`,
+              },
+            ],
+          },
+          'Moderator transitioning to next item',
+        );
 
-        const last = res.content[res.content.length - 1];
-        let text: string;
-        if (last.type === 'text') {
-          return last.text;
-        }
-        throw new Error('Invalid response format from API');
+        return res.content[res.content.length - 1].text;
       },
       // Description
       `transitioning to agenda item "${this.agenda[this.currentAgendaItem]}"`,
@@ -825,29 +680,24 @@ export class ModeratorAgent extends Agent {
     const response = await withRetryLogic(
       // API call function
       async () => {
-        const res = await this.client.messages.create({
-          model: this.highEndModel,
-          max_tokens: 400,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: `Meeting transcript excerpt:\n${recentMessages
-                .map((m) => `${m.agentId || 'User'}: ${m.content}`)
-                .join('\n')}`,
-            },
-          ],
-        });
+        const res = await this.client.createMessage(
+          {
+            model: this.highEndModel,
+            max_tokens: 400,
+            system: systemPrompt,
+            messages: [
+              {
+                role: 'user',
+                content: `Meeting transcript excerpt:\n${recentMessages
+                  .map((m) => `${m.agentId || 'User'}: ${m.content}`)
+                  .join('\n')}`,
+              },
+            ],
+          },
+          'Moderator concluding meeting',
+        );
 
-        const last = res.content[res.content.length - 1];
-        let text: string;
-        if (last.type === 'text') {
-          text = last.text;
-        } else {
-          throw new Error('Invalid response format from API');
-        }
-
-        return text;
+        return res.content[res.content.length - 1].text;
       },
       // Description
       'generating meeting conclusion',
@@ -902,29 +752,24 @@ export class ModeratorAgent extends Agent {
     const response = await withRetryLogic(
       // API call function
       async () => {
-        const res = await this.client.messages.create({
-          model: this.highEndModel,
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: `Full meeting transcript:\n${conversation
-                .map((m) => `${m.agentId || 'User'}: ${m.content}`)
-                .join('\n')}`,
-            },
-          ],
-        });
+        const res = await this.client.createMessage(
+          {
+            model: this.highEndModel,
+            max_tokens: 1000,
+            system: systemPrompt,
+            messages: [
+              {
+                role: 'user',
+                content: `Full meeting transcript:\n${conversation
+                  .map((m) => `${m.agentId || 'User'}: ${m.content}`)
+                  .join('\n')}`,
+              },
+            ],
+          },
+          'Moderator summarizing meeting',
+        );
 
-        const last = res.content[res.content.length - 1];
-        let text: string;
-        if (last.type === 'text') {
-          text = last.text;
-        } else {
-          throw new Error('Invalid response format from API');
-        }
-
-        return text;
+        return res.content[res.content.length - 1].text;
       },
       // Description
       'generating detailed meeting summary',
@@ -989,14 +834,15 @@ export class ModeratorAgent extends Agent {
         return agentIds[Math.floor(Math.random() * agentIds.length)];
       }
 
-      const response = await this.client.messages.create({
-        model: this.lowEndModel,
-        max_tokens: 50,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: `
+      const response = await this.client.createMessage(
+        {
+          model: this.lowEndModel,
+          max_tokens: 50,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: `
               Recent conversation:
               ${JSON.stringify(
                 recentMessages.map((m) => ({
@@ -1012,17 +858,13 @@ export class ModeratorAgent extends Agent {
               
               Who should speak next? Respond with only their agent_id.
             `,
-          },
-        ],
-      });
+            },
+          ],
+        },
+        'Moderator semi-randomly picking a user',
+      );
 
-      const last = response.content[response.content.length - 1];
-      let nextSpeaker: string;
-      if (last.type === 'text') {
-        nextSpeaker = last.text.trim();
-      } else {
-        throw new Error('Invalid response format from API');
-      }
+      let nextSpeaker = response.content[response.content.length - 1].text.trim();
 
       // Clean up response to just get the agent ID
       if (!agents[nextSpeaker]) {
@@ -1043,7 +885,7 @@ export class ModeratorAgent extends Agent {
       if (agents[nextSpeaker]) {
         return nextSpeaker;
       }
-      // Fallback: choose someone who hasn't spoken recently and is not the last speaker
+      // Fallback: choose someone who is not the last speaker
       const agentIds = Object.keys(agents).filter((id) => id !== 'moderator' && id !== lastSpeakerId);
       return agentIds[Math.floor(Math.random() * agentIds.length)];
     } catch (error: unknown) {
@@ -1102,26 +944,25 @@ export class ModeratorAgent extends Agent {
     }
 
     try {
-      const response = await this.client.messages.create({
-        model: this.lowEndModel,
-        max_tokens: 10,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: `Recent discussion:\n${currentItemMessages
-              .slice(-10)
-              .map((m) => `${m.agentId || 'User'}: ${m.content}`)
-              .join('\n')}`,
-          },
-        ],
-      });
+      const response = await this.client.createMessage(
+        {
+          model: this.lowEndModel,
+          max_tokens: 10,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: `Recent discussion:\n${currentItemMessages
+                .slice(-10)
+                .map((m) => `${m.agentId || 'User'}: ${m.content}`)
+                .join('\n')}`,
+            },
+          ],
+        },
+        'Moderator deciding if we should move to next action item',
+      );
 
-      const last = response.content[response.content.length - 1];
-      if (last.type === 'text') {
-        return last.text.trim().toUpperCase().includes('YES');
-      }
-      throw new Error('Invalid response format from API');
+      return response.content[response.content.length - 1].text.trim().toUpperCase().includes('YES');
     } catch (error: unknown) {
       console.error('Error deciding on agenda progression:', error);
       // Default to continuing the current item

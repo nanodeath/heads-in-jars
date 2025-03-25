@@ -1,8 +1,3 @@
-/**
- * Speaker selection utilities
- */
-
-import ora from 'ora';
 import type { Agent } from '../agents/agent.js';
 import type { ModeratorAgent } from '../agents/moderator.js';
 import type { Message } from '../types.js';

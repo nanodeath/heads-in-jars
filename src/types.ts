@@ -1,5 +1,5 @@
-import type Anthropic from '@anthropic-ai/sdk';
 import type { ChalkInstance } from 'chalk';
+import type { AnthropicClient } from './api/client.js';
 
 // Extend the global namespace to add the isDebugMode property
 declare global {
@@ -66,7 +66,7 @@ export interface AgentOptions {
   persona: string;
   role: string;
   color: ChalkInstance;
-  client: Anthropic;
+  client: AnthropicClient;
   lowEndModel?: string;
   highEndModel?: string;
   maxTokens?: number;
@@ -74,7 +74,7 @@ export interface AgentOptions {
 
 // Meeting simulator options
 export interface MeetingSimulatorOptions {
-  client: Anthropic;
+  client: AnthropicClient;
   agenda: string[];
   userInvolvement?: string;
   lowEndModel?: string;
@@ -98,7 +98,7 @@ export interface PersonaDirectory {
 
 // Moderator agent options
 export interface ModeratorOptions {
-  client: Anthropic;
+  client: AnthropicClient;
   agenda: string[];
   availablePersonas: PersonaDirectory;
   lowEndModel?: string;

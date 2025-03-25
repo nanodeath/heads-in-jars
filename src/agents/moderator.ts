@@ -2,15 +2,14 @@
  * Moderator Agent for managing the meeting
  */
 
-import chalk, { Chalk } from 'chalk';
-import { type MessageParams, createMessage } from '../api/client.js';
+import chalk from 'chalk';
+import type { MessageParams } from '../api/index.js';
 import {
   createAgendaTransitionPrompt,
   createMeetingConclusionPrompt,
   createMeetingStartPrompt,
 } from '../api/prompts.js';
 import type { Message, ModeratorOptions, PersonaDirectory, PersonaInfo, TokenUsage } from '../types.js';
-import { debugLog } from '../utils/formatting.js';
 import { withRetryLogic } from '../utils/retries.js';
 import { Agent } from './agent.js';
 
@@ -75,24 +74,23 @@ export class ModeratorAgent extends Agent {
     `;
 
     try {
-      const response = await this.client.messages.create({
-        model: this.highEndModel,
-        max_tokens: 500,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: 'Select the participants for this meeting.',
-          },
-        ],
-      });
+      const response = await this.client.createMessage(
+        {
+          model: this.highEndModel,
+          max_tokens: 500,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: 'Select the participants for this meeting.',
+            },
+          ],
+        },
+        'Selecting participants for meeting',
+      );
 
       // Extract JSON array from response
-      let responseText = '';
-      const last = response.content[response.content.length - 1];
-      if (last.type === 'text') {
-        responseText = last.text.trim();
-      }
+      const responseText = response.content[response.content.length - 1].text;
 
       // Find JSON array in the text (handle cases where Claude adds explanation)
       const jsonMatch = responseText.match(/\[(.*)\]/s);
@@ -165,12 +163,10 @@ export class ModeratorAgent extends Agent {
       max_tokens: 300,
       system: systemPrompt,
       messages: [{ role: 'user', content: 'Please start the meeting.' }],
-      stream: false,
     };
 
-    const response = await createMessage(
-      this.client,
-      { ...messageParams, stream: false },
+    const response = await this.client.createMessage(
+      messageParams,
       'starting meeting',
       `Welcome everyone to our meeting on ${this.meetingPurpose}. Let's get started with our first agenda item: ${this.agenda[0]}.`,
     );
@@ -226,12 +222,15 @@ export class ModeratorAgent extends Agent {
     const response = await withRetryLogic(
       // API call function
       async () => {
-        const res = await this.client.messages.create({
-          model: this.highEndModel,
-          max_tokens: 350,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userContent }],
-        });
+        const res = await this.client.createMessage(
+          {
+            model: this.highEndModel,
+            max_tokens: 350,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userContent }],
+          },
+          'Moderator agenda item transition',
+        );
 
         // Check response validity
         if (!res || !res.content || !res.content.length) {
@@ -240,7 +239,7 @@ export class ModeratorAgent extends Agent {
 
         return {
           ...res,
-          content: res.content.filter((c) => c.type === 'text'),
+          content: res.content,
         };
       },
       // Description
@@ -282,12 +281,15 @@ export class ModeratorAgent extends Agent {
     const response = await withRetryLogic(
       // API call function
       async () => {
-        const res = await this.client.messages.create({
-          model: this.highEndModel,
-          max_tokens: 400,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userContent }],
-        });
+        const res = await this.client.createMessage(
+          {
+            model: this.highEndModel,
+            max_tokens: 400,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userContent }],
+          },
+          'Moderator meeting conclusion',
+        );
 
         // Check response validity
         if (!res || !res.content || !res.content.length) {
@@ -296,7 +298,7 @@ export class ModeratorAgent extends Agent {
 
         return {
           ...res,
-          content: res.content.filter((c) => c.type === 'text'),
+          content: res.content,
         };
       },
       // Description
@@ -361,12 +363,15 @@ export class ModeratorAgent extends Agent {
     const response = await withRetryLogic(
       // API call function
       async () => {
-        const res = await this.client.messages.create({
-          model: this.highEndModel,
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userContent }],
-        });
+        const res = await this.client.createMessage(
+          {
+            model: this.highEndModel,
+            max_tokens: 1000,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userContent }],
+          },
+          'Moderator meeting summary',
+        );
 
         // Check response validity
         if (!res || !res.content || !res.content.length) {
@@ -375,7 +380,7 @@ export class ModeratorAgent extends Agent {
 
         return {
           ...res,
-          content: res.content.filter((c) => c.type === 'text'),
+          content: res.content,
         };
       },
       // Description
@@ -444,14 +449,15 @@ export class ModeratorAgent extends Agent {
         return agentIds[Math.floor(Math.random() * agentIds.length)];
       }
 
-      const response = await this.client.messages.create({
-        model: this.lowEndModel,
-        max_tokens: 50,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: `
+      const response = await this.client.createMessage(
+        {
+          model: this.lowEndModel,
+          max_tokens: 50,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: `
               Recent conversation:
               ${JSON.stringify(
                 recentMessages.map((m) => ({
@@ -467,15 +473,13 @@ export class ModeratorAgent extends Agent {
               
               Who should speak next? Respond with only their agent_id.
             `,
-          },
-        ],
-      });
+            },
+          ],
+        },
+        'Moderator choose next speaker',
+      );
 
-      let nextSpeaker = 'tbd';
-      const last = response.content[response.content.length - 1];
-      if (last.type === 'text') {
-        nextSpeaker = last.text.trim();
-      }
+      let nextSpeaker = response.content[response.content.length - 1].text.trim();
 
       // Clean up response to just get the agent ID
       if (!agents[nextSpeaker]) {
@@ -559,26 +563,25 @@ export class ModeratorAgent extends Agent {
     }
 
     try {
-      const response = await this.client.messages.create({
-        model: this.lowEndModel,
-        max_tokens: 10,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: `Recent discussion:\n${currentItemMessages
-              .slice(-10)
-              .map((m) => `${m.agentId || 'User'}: ${m.content}`)
-              .join('\n')}`,
-          },
-        ],
-      });
+      const response = await this.client.createMessage(
+        {
+          model: this.lowEndModel,
+          max_tokens: 10,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: `Recent discussion:\n${currentItemMessages
+                .slice(-10)
+                .map((m) => `${m.agentId || 'User'}: ${m.content}`)
+                .join('\n')}`,
+            },
+          ],
+        },
+        'Moderator should move on',
+      );
 
-      const last = response.content[response.content.length - 1];
-      if (last.type === 'text') {
-        return last.text.trim().toUpperCase().includes('YES');
-      }
-      return false;
+      return response.content[response.content.length - 1].text.toUpperCase().includes('YES');
     } catch (error: unknown) {
       console.error('Error deciding on agenda progression:', error);
       // Default to continuing the current item

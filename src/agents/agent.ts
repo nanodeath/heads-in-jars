@@ -2,12 +2,10 @@
  * Base Agent class
  */
 
-import type Anthropic from '@anthropic-ai/sdk';
 import type { ChalkInstance } from 'chalk';
-import { type MessageParams, createMessage } from '../api/client.js';
+import type { AnthropicClient, MessageParams } from '../api/index.js';
 import { createIntroductionPrompt, createResponsePrompt, createUrgencyPrompt } from '../api/prompts.js';
-import { createStreamingMessage, estimateTokenUsage } from '../api/streaming.js';
-import { type AgentOptions, type Message, TokenUsage } from '../types.js';
+import type { AgentOptions, Message } from '../types.js';
 import { completeStreamedMessage, printAgentMessage, printStreamingChunk } from '../ui/messaging.js';
 import { removeNamePrefix } from '../utils/conversation.js';
 import { calculateCost } from '../utils/costs.js';
@@ -22,7 +20,7 @@ export class Agent {
   persona: string;
   role: string;
   color: ChalkInstance;
-  client: Anthropic;
+  client: AnthropicClient;
   lowEndModel: string;
   highEndModel: string;
   maxTokens: number;
@@ -90,12 +88,10 @@ export class Agent {
         max_tokens: 150,
         system: systemPrompt,
         messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
-        stream: false,
       };
 
-      const response = await createMessage(
-        this.client,
-        { ...messageParams, stream: false },
+      const response = await this.client.createMessage(
+        messageParams,
         `generating introduction for ${this.name}`,
         `Hello, I'm ${this.name}. [Error generating introduction]`,
       );
@@ -169,12 +165,10 @@ Based on this context, how urgently do you need to speak (1-5)?
         max_tokens: 10,
         system: systemPrompt,
         messages: [{ role: 'user', content: userContent }],
-        stream: false,
       };
 
-      const response = await createMessage(
-        this.client,
-        { ...messageParams, stream: false },
+      const response = await this.client.createMessage(
+        messageParams,
         `calculating urgency for ${this.name}`,
         '3', // Default medium urgency
       );
@@ -262,28 +256,17 @@ Based on this context, how urgently do you need to speak (1-5)?
       max_tokens: this.maxTokens,
       system: systemPrompt,
       messages: formattedMessages,
-      stream: false,
     };
 
     try {
       // Use streaming or standard API call based on whether a callback was provided
       if (onStream) {
         // Use streaming API for real-time output
-        return await createStreamingMessage(
-          this.client,
-          {
-            ...messageParams,
-            stream: true,
-          },
-          onStream,
-          this.name,
-          this.role,
-        );
+        return await this.client.createStreamingMessage(messageParams, onStream);
       }
       // Use non-streaming API call
-      const response = await createMessage(
-        this.client,
-        { ...messageParams, stream: false },
+      const response = await this.client.createMessage(
+        messageParams,
         `generating response for ${this.name}`,
         `I'd like to share my thoughts on this, but I'm having technical difficulty at the moment.`,
       );
