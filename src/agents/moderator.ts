@@ -553,6 +553,10 @@ export class ModeratorAgent extends Agent {
     if (currentItemMessages.length < 5) {
       return false;
     }
+    // Alright...that's plenty
+    if (currentItemMessages.length >= 10) {
+      return true;
+    }
 
     try {
       const response = await this.client.messages.create({
