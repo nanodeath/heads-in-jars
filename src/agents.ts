@@ -1,5 +1,13 @@
 import chalk, { type ChalkInstance } from 'chalk';
 import type { AnthropicClient, MessageParam } from './api/client.js';
+import {
+  createAgendaTransitionPrompt,
+  createIntroductionPrompt,
+  createMeetingConclusionPrompt,
+  createMeetingStartPrompt,
+  createResponsePrompt,
+  createUrgencyPrompt,
+} from './api/prompts.js';
 import type { AgentOptions, Message, ModeratorOptions, PersonaDirectory, PersonaInfo, TokenUsage } from './types.js';
 import { calculateCost, withRetryLogic } from './utils.js';
 import { debugLog } from './utils/index.js';
@@ -62,11 +70,7 @@ export class Agent {
 
     updateStatus(`Generating introduction for ${this.name}...`);
 
-    const systemPrompt = `
-      You are ${this.name}, ${this.persona}
-      Write a brief introduction of yourself in first person, explaining your role and what you bring to the meeting.
-      Keep it under 100 words and make it sound natural.
-    `;
+    const systemPrompt = createIntroductionPrompt(this.name, this.persona);
 
     debugLog(`Generating introduction for ${this.name}`);
 
@@ -128,20 +132,7 @@ export class Agent {
    */
   async calculateUrgency(recentMessages: Message[], currentAgendaItem: string): Promise<number> {
     // Create a more structured system prompt for calculating urgency
-    const systemPrompt = `
-      You are an AI assistant helping to determine how urgently a meeting participant needs to speak.
-      
-      Based on the context and recent messages, you will analyze whether this participant should contribute now.
-      You will output ONLY a number from 1-5 representing urgency:
-      
-      1: No need to speak, nothing to add right now
-      2: Might have something minor to contribute
-      3: Have a relevant point to make when appropriate
-      4: Have an important point that should be made soon
-      5: Need to speak immediately on a critical matter
-      
-      IMPORTANT: Respond ONLY with a single number from 1-5, nothing else.
-    `;
+    const systemPrompt = createUrgencyPrompt();
 
     debugLog(`${this.name} calculating urgency...`);
 
@@ -256,22 +247,7 @@ Based on this context, how urgently do you need to speak (1-5)?
     // Reset the count of messages since last spoken
     this.messagesSinceLastSpoken = 0;
 
-    const systemPrompt = `
-      You are ${this.name}, ${this.persona}.
-      
-      You are participating in a meeting with other AI agents. Respond in a way that's consistent with your persona.
-      Keep your responses concise and to the point, focused on adding value to the discussion.
-      
-      Rules:
-      1. You must speak ONLY as ${this.name} - DO NOT respond on behalf of other meeting participants.
-      2. CRITICAL: DO NOT include your name, identity or role in your response. The system will add your name automatically. For example, DO NOT start with "${this.name}: " or "${this.name} [${this.role}]: " or anything similar.
-      3. Keep your response BRIEF - no more than 2-3 short paragraphs maximum.
-      4. Be focused and direct - make your point clearly without rambling.
-      5. Use natural language, don't be robotic. Speak as if in an actual meeting.
-      6. IMPORTANT: DO NOT include narrative actions like "*listens intently*", "*nods thoughtfully*", "*thinks about it*", etc. Just speak directly without these narrative descriptors.
-      7. Don't fabricate historical data or user studies.
-      8. Focus on contributing substance to the discussion rather than social pleasantries.
-    `;
+    const systemPrompt = createResponsePrompt(this.name, this.persona, this.role);
 
     // Format conversation for the API
     const formattedMessages = conversation.map((message) => {
@@ -532,24 +508,7 @@ export class ModeratorAgent extends Agent {
    * Generate the meeting introduction and first agenda item
    */
   async startMeeting(): Promise<string> {
-    const systemPrompt = `
-      You are the meeting moderator starting a meeting.
-      
-      Meeting purpose: "${this.meetingPurpose}"
-      
-      The full agenda is:
-      ${JSON.stringify(this.agenda, null, 2)}
-      
-      Write a short introduction that:
-      1. Welcomes everyone to the meeting
-      2. Clearly states the purpose of the meeting: "${this.meetingPurpose}"
-      3. Summarizes the overall agenda structure
-      4. Introduces the first agenda item: "${this.agenda[0]}"
-      
-      Keep it concise, professional, and energetic.
-      
-      IMPORTANT: DO NOT include narrative actions like "*looks around the room*", "*nods*", etc. Just speak directly without these narrative descriptors.
-    `;
+    const systemPrompt = createMeetingStartPrompt(this.meetingPurpose, this.agenda);
 
     const response = await this.client.createMessage(
       {
@@ -597,20 +556,10 @@ export class ModeratorAgent extends Agent {
       }
     }
 
-    const systemPrompt = `
-      You are the meeting moderator transitioning to the next agenda item.
-      
-      The previous agenda item was: "${this.agenda[this.currentAgendaItem - 1]}"
-      The next agenda item is: "${this.agenda[this.currentAgendaItem]}"
-      
-      Review the discussion of the previous agenda item and provide:
-      1. A brief summary of the key points and decisions made
-      2. A short introduction to the next agenda item
-      
-      Keep it concise and professional.
-      
-      IMPORTANT: DO NOT include narrative actions like "*looks around the room*", "*nods*", etc. Just speak directly without these narrative descriptors.
-    `;
+    const systemPrompt = createAgendaTransitionPrompt(
+      this.agenda[this.currentAgendaItem - 1],
+      this.agenda[this.currentAgendaItem],
+    );
 
     // Use retry logic for agenda item transition
     const response = await withRetryLogic(
@@ -657,21 +606,7 @@ export class ModeratorAgent extends Agent {
    * Generate a meeting conclusion message
    */
   async endMeeting(conversation: Message[]): Promise<string> {
-    const systemPrompt = `
-      You are the meeting moderator concluding a meeting.
-      
-      The meeting agenda was:
-      ${JSON.stringify(this.agenda, null, 2)}
-      
-      Write a concise closing statement that:
-      1. Summarizes the key points and decisions from the meeting
-      2. Outlines any action items or next steps
-      3. Thanks everyone for their participation
-      
-      Keep it professional and under 200 words.
-      
-      IMPORTANT: DO NOT include narrative actions like "*looks around the room*", "*nods*", etc. Just speak directly without these narrative descriptors.
-    `;
+    const systemPrompt = createMeetingConclusionPrompt(this.agenda);
 
     // Get the last portion of the conversation to summarize
     const recentMessages = conversation.slice(-Math.min(20, conversation.length));

@@ -5,9 +5,13 @@
 import chalk from 'chalk';
 import type { MessageParams } from '../api/index.js';
 import {
+  createAgendaProgressionPrompt,
   createAgendaTransitionPrompt,
   createMeetingConclusionPrompt,
   createMeetingStartPrompt,
+  createMeetingSummaryPrompt,
+  createNextSpeakerPrompt,
+  createParticipantSelectionPrompt,
 } from '../api/prompts.js';
 import type { Message, ModeratorOptions, PersonaDirectory, PersonaInfo, TokenUsage } from '../types.js';
 import { withRetryLogic } from '../utils/retries.js';
@@ -56,22 +60,10 @@ export class ModeratorAgent extends Agent {
    * Select which personas should participate in the meeting based on the agenda
    */
   async selectParticipants(): Promise<Record<string, PersonaInfo>> {
-    const systemPrompt = `
-      You are a meeting moderator planning the participants for a meeting.
-      
-      The meeting agenda is:
-      ${JSON.stringify(this.agenda, null, 2)}
-      
-      Available personas are:
-      ${JSON.stringify(
-        Object.fromEntries(Object.entries(this.availablePersonas).map(([k, v]) => [k, v.description])),
-        null,
-        2,
-      )}
-      
-      Select which personas should attend this meeting based on the agenda items.
-      Return ONLY a JSON array of persona IDs that should attend, nothing else.
-    `;
+    const personaDescriptions = Object.fromEntries(
+      Object.entries(this.availablePersonas).map(([k, v]) => [k, v.description]),
+    );
+    const systemPrompt = createParticipantSelectionPrompt(this.agenda, personaDescriptions);
 
     try {
       const response = await this.client.createMessage(
@@ -326,31 +318,7 @@ export class ModeratorAgent extends Agent {
    * Generate a comprehensive meeting summary for the transcript
    */
   async generateMeetingSummary(conversation: Message[]): Promise<string> {
-    const systemPrompt = `
-      You are the meeting moderator creating a detailed summary of a meeting that just concluded.
-      
-      The meeting purpose was: "${this.meetingPurpose}"
-      
-      The meeting agenda was:
-      ${JSON.stringify(this.agenda, null, 2)}
-      
-      Write a comprehensive but concise summary that includes:
-      1. Key points discussed for each agenda item
-      2. Important decisions that were made
-      3. Action items and who is responsible for them (if specified)
-      4. Any important questions that were raised and their answers
-      5. Any major challenges or disagreements that were discussed
-      6. Next steps for the team
-      
-      IMPORTANT FORMATTING RULES:
-      - DO NOT include a "Meeting Summary" heading - that will be added separately
-      - Use level 3 headings (###) for all section headers, not level 1 or 2
-      - Use bullet points for lists
-      - Keep the overall structure clean and consistent
-      
-      The summary should be thorough enough to be useful to someone who didn't attend.
-      Aim for 300-500 words.
-    `;
+    const systemPrompt = createMeetingSummaryPrompt(this.meetingPurpose, this.agenda);
 
     // Get the entire conversation to summarize
     const userContent = `Full meeting transcript:\n${conversation
@@ -412,20 +380,8 @@ export class ModeratorAgent extends Agent {
     conversation: Message[],
     lastSpeakerId: string | null = null,
   ): Promise<string> {
-    const systemPrompt = `
-      You are the meeting moderator deciding who should speak next.
-      
-      Current agenda item: "${this.agenda[this.currentAgendaItem]}"
-      
-      Review the recent conversation and decide which participant should speak next.
-      Consider:
-      - Who has relevant expertise for the current topic
-      - Who hasn't spoken recently and might have valuable input
-      - The natural flow of conversation
-      ${lastSpeakerId ? `- Do NOT select ${agents[lastSpeakerId].name} who just spoke` : ''}
-      
-      Return ONLY the ID of the agent who should speak next, nothing else.
-    `;
+    const lastSpeakerName = lastSpeakerId ? agents[lastSpeakerId].name : undefined;
+    const systemPrompt = createNextSpeakerPrompt(this.agenda[this.currentAgendaItem], lastSpeakerName);
 
     // Get the last portion of the conversation
     const recentMessages = conversation.slice(-Math.min(10, conversation.length));
@@ -520,20 +476,7 @@ export class ModeratorAgent extends Agent {
    * Determine if it's time to move to the next agenda item
    */
   async shouldMoveToNextAgendaItem(conversation: Message[]): Promise<boolean> {
-    const systemPrompt = `
-      You are the meeting moderator deciding if it's time to move to the next agenda item.
-      
-      Current agenda item: "${this.agenda[this.currentAgendaItem]}"
-      
-      Review the recent conversation and decide if the current agenda item has been sufficiently discussed.
-      Consider:
-      - Have the key points been covered?
-      - Has the discussion started going in circles?
-      - Has a conclusion or decision been reached?
-      - Have all relevant participants had a chance to contribute?
-      
-      Return ONLY "YES" if it's time to move on, or "NO" if more discussion is needed.
-    `;
+    const systemPrompt = createAgendaProgressionPrompt(this.agenda[this.currentAgendaItem]);
 
     // Get messages relevant to the current agenda item
     const currentItemMessages: Message[] = [];
