@@ -181,30 +181,6 @@ export function createMeetingSummaryPrompt(meetingPurpose: string, agenda: strin
 }
 
 /**
- * Creates a system prompt for next speaker selection
- *
- * @param currentAgendaItem Current agenda item being discussed
- * @param lastSpeakerName Name of the last person who spoke (optional)
- * @returns System prompt for next speaker selection
- */
-export function createNextSpeakerPrompt(currentAgendaItem: string, lastSpeakerName?: string): string {
-  return `
-    You are the meeting moderator deciding who should speak next.
-    
-    Current agenda item: "${currentAgendaItem}"
-    
-    Review the recent conversation and decide which participant should speak next.
-    Consider:
-    - Who has relevant expertise for the current topic
-    - Who hasn't spoken recently and might have valuable input
-    - The natural flow of conversation
-    ${lastSpeakerName ? `- Do NOT select ${lastSpeakerName} who just spoke` : ''}
-    
-    Return ONLY the ID of the agent who should speak next, nothing else.
-  `;
-}
-
-/**
  * Creates a system prompt for determining if it's time to move to the next agenda item
  *
  * @param currentAgendaItem Current agenda item being discussed

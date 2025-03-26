@@ -5,7 +5,6 @@
 import type { Agent } from '../agents/agent.js';
 import type { Message, MessageRole } from '../types.js';
 import { createMessage as createMessageObj } from '../utils/conversation.js';
-import { debugLog } from '../utils/formatting.js';
 
 /**
  * Conversation manager class
@@ -35,30 +34,6 @@ export class ConversationManager {
 
     const message = createMessageObj(role, content, agentId, agentName, agentRole);
     this.conversation.push(message);
-
-    // Increment messagesSinceLastSpoken for all agents except the one speaking
-    if (role === 'assistant' && agentId) {
-      for (const [id, agent] of Object.entries(this.agents)) {
-        if (id !== agentId && id !== 'moderator') {
-          agent.messagesSinceLastSpoken++;
-
-          if (global.isDebugMode) {
-            debugLog(`Incremented message count for ${agent.name} to ${agent.messagesSinceLastSpoken}`);
-          }
-        }
-      }
-    } else if (role === 'user') {
-      // When user speaks, increment for all non-moderator agents
-      for (const [id, agent] of Object.entries(this.agents)) {
-        if (id !== 'moderator') {
-          agent.messagesSinceLastSpoken++;
-
-          if (global.isDebugMode) {
-            debugLog(`Incremented message count for ${agent.name} to ${agent.messagesSinceLastSpoken}`);
-          }
-        }
-      }
-    }
   }
 
   /**

@@ -2,6 +2,7 @@ import type { Agent } from '../agents/agent.js';
 import type { ModeratorAgent } from '../agents/moderator.js';
 import type { Message } from '../types.js';
 import { createThinkingSpinner, updateSpinnerWithNextSpeaker } from '../ui/spinner.js';
+import { weightedRandom } from '../utils/calculation.js';
 import { debugLog } from '../utils/formatting.js';
 
 /**
@@ -92,26 +93,7 @@ export async function selectNextSpeaker(
   // Wait for all urgency calculations to complete
   await Promise.all(urgencyPromises);
 
-  // Let moderator choose next speaker, influenced by urgency scores
-  // Filter out the restricted speaker (who has zero urgency)
-  const eligibleSpeakers = Object.entries(urgencyScores)
-    .filter(([agentId, score]) => agentId !== restrictedSpeakerId)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3); // Top 3 most urgent
-
-  let nextSpeaker: string;
-  let speakerSelectionReason: string;
-
-  if (Math.random() < 0.7 && eligibleSpeakers.length > 0) {
-    // 70% chance to pick from top urgent speakers
-    nextSpeaker = eligibleSpeakers[0][0];
-    speakerSelectionReason = 'highest urgency score';
-  } else {
-    // 30% chance to let moderator decide, but ensure we pass restrictedSpeakerId
-    // so the moderator knows not to pick them again
-    nextSpeaker = await moderator.chooseNextSpeaker(agents, conversation, restrictedSpeakerId);
-    speakerSelectionReason = 'moderator selection';
-  }
+  const nextSpeaker = weightedRandom(Object.entries(urgencyScores)) ?? participantAgentIds[0];
 
   // Update spinner to show final state with speaker having raised hand
   updateSpinnerWithNextSpeaker(spinner, thinkingStatus, agents, nextSpeaker);
@@ -119,9 +101,6 @@ export async function selectNextSpeaker(
   // Brief pause to see final state
   await new Promise((resolve) => setTimeout(resolve, 800));
   spinner.succeed();
-
-  // Log selection reason only in debug mode
-  debugLog(`Selected next speaker: ${agents[nextSpeaker].name} (${speakerSelectionReason})`);
 
   // Display urgency scores in debug mode
   if (global.isDebugMode) {
