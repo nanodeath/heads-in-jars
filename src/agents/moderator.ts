@@ -7,13 +7,15 @@ import type { MessageParams } from '../api/index.js';
 import {
   createAgendaProgressionPrompt,
   createAgendaTransitionPrompt,
+  createIntroductionPrompt,
   createMeetingConclusionPrompt,
   createMeetingStartPrompt,
   createMeetingSummaryPrompt,
-  createNextSpeakerPrompt,
   createParticipantSelectionPrompt,
 } from '../api/prompts.js';
 import type { Message, ModeratorOptions, PersonaDirectory, PersonaInfo, TokenUsage } from '../types.js';
+import { calculateCost } from '../utils.js';
+import { debugLog } from '../utils/index.js';
 import { withRetryLogic } from '../utils/retries.js';
 import { Agent } from './agent.js';
 
@@ -54,6 +56,65 @@ export class ModeratorAgent extends Agent {
     this.availablePersonas = availablePersonas;
     this.selectedPersonas = {};
     this.meetingPurpose = meetingPurpose;
+  }
+
+  /**
+   * Generate an introduction for the agent
+   */
+  async generateIntroduction(statusCallback: ((message: string) => void) | null = null): Promise<string> {
+    if (this.introduction) return this.introduction;
+
+    const systemPrompt = createIntroductionPrompt(this.name, this.persona);
+
+    debugLog(`Generating introduction for ${this.name}`);
+
+    // Log the request in debug mode
+    debugLog(`Introduction API request for ${this.name}`, {
+      model: this.lowEndModel,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
+    });
+
+    try {
+      const messageParams: MessageParams = {
+        model: this.lowEndModel,
+        max_tokens: 150,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
+      };
+
+      const response = await this.client.createMessage(
+        messageParams,
+        `generating introduction for ${this.name}`,
+        `Hello, I'm ${this.name}. [Error generating introduction]`,
+      );
+
+      // Log the response in debug mode
+      debugLog(`Introduction API response for ${this.name}`, {
+        content: response.content[0].text,
+        usage: response.usage,
+      });
+
+      // Calculate and log cost estimate
+      const costEstimate = calculateCost(this.lowEndModel, response.usage);
+      debugLog(`💰 Cost estimate for ${this.name} introduction generation:`, {
+        model: this.lowEndModel,
+        inputTokens: costEstimate.inputTokens,
+        outputTokens: costEstimate.outputTokens,
+        inputCost: `$${costEstimate.inputCost}`,
+        outputCost: `$${costEstimate.outputCost}`,
+        totalCost: `$${costEstimate.totalCost}`,
+      });
+
+      this.introduction = response.content[0].text;
+      return this.introduction;
+    } catch (error: unknown) {
+      console.error(`Error generating introduction for ${this.name}:`, error);
+      if (error instanceof Error) {
+        this.introduction = `Hello, I'm ${this.name}. [Error generating introduction: ${error.message}]`;
+      }
+      return this.introduction;
+    }
   }
 
   /**
@@ -370,106 +431,6 @@ export class ModeratorAgent extends Agent {
     );
 
     return response.content[0].text;
-  }
-
-  /**
-   * Decide which agent should speak next
-   */
-  async chooseNextSpeaker(
-    agents: Record<string, Agent>,
-    conversation: Message[],
-    lastSpeakerId: string | null = null,
-  ): Promise<string> {
-    const lastSpeakerName = lastSpeakerId ? agents[lastSpeakerId].name : undefined;
-    const systemPrompt = createNextSpeakerPrompt(this.agenda[this.currentAgendaItem], lastSpeakerName);
-
-    // Get the last portion of the conversation
-    const recentMessages = conversation.slice(-Math.min(10, conversation.length));
-
-    try {
-      // If we have a lastSpeakerId, create available participants excluding that agent
-      const availableParticipants: Record<string, string> = {};
-      for (const [id, agent] of Object.entries(agents)) {
-        if (id !== 'moderator' && id !== lastSpeakerId) {
-          availableParticipants[id] = agent.name;
-        }
-      }
-
-      // If we somehow have no available participants (shouldn't happen), return random
-      if (Object.keys(availableParticipants).length === 0) {
-        const agentIds = Object.keys(agents).filter((id) => id !== 'moderator' && id !== lastSpeakerId);
-        if (agentIds.length === 0) {
-          // Fallback if we somehow have only the moderator and last speaker
-          return Object.keys(agents).filter((id) => id !== 'moderator')[0];
-        }
-        return agentIds[Math.floor(Math.random() * agentIds.length)];
-      }
-
-      const response = await this.client.createMessage(
-        {
-          model: this.lowEndModel,
-          max_tokens: 50,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: `
-              Recent conversation:
-              ${JSON.stringify(
-                recentMessages.map((m) => ({
-                  agent: m.agentId,
-                  content: m.content,
-                })),
-                null,
-                2,
-              )}
-              
-              Available participants:
-              ${JSON.stringify(availableParticipants, null, 2)}
-              
-              Who should speak next? Respond with only their agent_id.
-            `,
-            },
-          ],
-        },
-        'Moderator choose next speaker',
-      );
-
-      let nextSpeaker = response.content[response.content.length - 1].text.trim();
-
-      // Clean up response to just get the agent ID
-      if (!agents[nextSpeaker]) {
-        // Try to extract just the ID if the model added explanation
-        const idMatch = nextSpeaker.match(/([a-z_]+)/);
-        if (idMatch) {
-          nextSpeaker = idMatch[1];
-        }
-      }
-
-      // Make sure we didn't select the lastSpeakerId
-      if (nextSpeaker === lastSpeakerId) {
-        // If somehow the model returned the last speaker, select someone else
-        const eligibleAgents = Object.keys(agents).filter((id) => id !== 'moderator' && id !== lastSpeakerId);
-        nextSpeaker = eligibleAgents[Math.floor(Math.random() * eligibleAgents.length)];
-      }
-
-      if (agents[nextSpeaker]) {
-        return nextSpeaker;
-      }
-      // Fallback: choose someone who hasn't spoken recently and is not the last speaker
-      const agentIds = Object.keys(agents).filter((id) => id !== 'moderator' && id !== lastSpeakerId);
-      return agentIds[Math.floor(Math.random() * agentIds.length)];
-    } catch (error: unknown) {
-      console.error('Error choosing next speaker:', error);
-
-      // Random fallback avoiding the last speaker
-      const agentIds = Object.keys(agents).filter((id) => id !== 'moderator' && id !== lastSpeakerId);
-      if (agentIds.length === 0) {
-        // If we have no eligible agents (shouldn't happen), just pick any non-moderator
-        return Object.keys(agents).filter((id) => id !== 'moderator')[0];
-      }
-      return agentIds[Math.floor(Math.random() * agentIds.length)];
-    }
   }
 
   /**

@@ -4,7 +4,7 @@
 
 import type { ChalkInstance } from 'chalk';
 import type { AnthropicClient, MessageParams } from '../api/index.js';
-import { createIntroductionPrompt, createResponsePrompt, createUrgencyPrompt } from '../api/prompts.js';
+import { createResponsePrompt, createUrgencyPrompt } from '../api/prompts.js';
 import type { AgentOptions, Message } from '../types.js';
 import { completeStreamedMessage, printAgentMessage, printStreamingChunk } from '../ui/messaging.js';
 import { removeNamePrefix } from '../utils/conversation.js';
@@ -24,7 +24,6 @@ export class Agent {
   lowEndModel: string;
   highEndModel: string;
   maxTokens: number;
-  messagesSinceLastSpoken: number;
   introduction: string;
 
   /**
@@ -50,78 +49,7 @@ export class Agent {
     this.lowEndModel = lowEndModel;
     this.highEndModel = highEndModel;
     this.maxTokens = maxTokens;
-    this.messagesSinceLastSpoken = 0; // Count of messages since this agent last spoke
     this.introduction = '';
-  }
-
-  /**
-   * Generate an introduction for the agent
-   */
-  async generateIntroduction(statusCallback: ((message: string) => void) | null = null): Promise<string> {
-    // Helper function to update status if callback provided
-    const updateStatus = (message: string) => {
-      if (statusCallback && typeof statusCallback === 'function') {
-        statusCallback(message);
-      }
-    };
-
-    if (this.introduction) return this.introduction;
-
-    updateStatus(`Generating introduction for ${this.name}...`);
-
-    const systemPrompt = createIntroductionPrompt(this.name, this.persona);
-
-    debugLog(`Generating introduction for ${this.name}`);
-
-    // Log the request in debug mode
-    debugLog(`Introduction API request for ${this.name}`, {
-      model: this.lowEndModel,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
-    });
-
-    try {
-      updateStatus(`Contacting AI service for ${this.name}'s introduction...`);
-
-      const messageParams: MessageParams = {
-        model: this.lowEndModel,
-        max_tokens: 150,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: 'Please introduce yourself briefly.' }],
-      };
-
-      const response = await this.client.createMessage(
-        messageParams,
-        `generating introduction for ${this.name}`,
-        `Hello, I'm ${this.name}. [Error generating introduction]`,
-      );
-
-      // Log the response in debug mode
-      debugLog(`Introduction API response for ${this.name}`, {
-        content: response.content[0].text,
-        usage: response.usage,
-      });
-
-      // Calculate and log cost estimate
-      const costEstimate = calculateCost(this.lowEndModel, response.usage);
-      debugLog(`💰 Cost estimate for ${this.name} introduction generation:`, {
-        model: this.lowEndModel,
-        inputTokens: costEstimate.inputTokens,
-        outputTokens: costEstimate.outputTokens,
-        inputCost: `$${costEstimate.inputCost}`,
-        outputCost: `$${costEstimate.outputCost}`,
-        totalCost: `$${costEstimate.totalCost}`,
-      });
-
-      this.introduction = response.content[0].text;
-      return this.introduction;
-    } catch (error: unknown) {
-      console.error(`Error generating introduction for ${this.name}:`, error);
-      if (error instanceof Error) {
-        this.introduction = `Hello, I'm ${this.name}. [Error generating introduction: ${error.message}]`;
-      }
-      return this.introduction;
-    }
   }
 
   /**
@@ -194,17 +122,11 @@ Based on this context, how urgently do you need to speak (1-5)?
       // Clamp between 1-5
       urgency = Math.max(1.0, Math.min(5.0, urgency));
 
-      // Add message count factor - give a boost if the agent hasn't spoken in a while
-      // Calculate boost based on messages since last spoken (max boost of 2.0 after 10 messages)
-      const messageBoost = Math.min(2.0, Math.max(0, 0.2 * this.messagesSinceLastSpoken));
-
-      const totalUrgency = urgency + messageBoost;
+      const totalUrgency = urgency;
 
       // Log the urgency calculation
       debugLog(`${this.name} urgency calculation:`, {
         baseUrgency: urgency,
-        messagesSinceLastSpoken: this.messagesSinceLastSpoken,
-        messageBoost: messageBoost.toFixed(2),
         totalUrgency: totalUrgency.toFixed(2),
       });
 
@@ -219,9 +141,6 @@ Based on this context, how urgently do you need to speak (1-5)?
    * Generate a response based on the conversation context
    */
   async generateResponse(conversation: Message[], onStream?: (chunk: string) => void): Promise<string> {
-    // Reset the count of messages since last spoken
-    this.messagesSinceLastSpoken = 0;
-
     // Create the system prompt
     const systemPrompt = createResponsePrompt(this.name, this.persona, this.role);
 
