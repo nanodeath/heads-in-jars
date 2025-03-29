@@ -76,10 +76,11 @@ export interface AgentOptions {
 export interface MeetingSimulatorOptions {
   client: AnthropicClient;
   agenda: string[];
-  userInvolvement?: string;
-  lowEndModel?: string;
-  highEndModel?: string;
-  meetingPurpose?: string;
+  userInvolvement: string;
+  lowEndModel: string;
+  highEndModel: string;
+  meetingPurpose: string;
+  personas: PersonaDirectory;
 }
 
 // Personas structure

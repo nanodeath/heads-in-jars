@@ -36,10 +36,11 @@ export class MeetingSimulator {
   constructor({
     client,
     agenda,
-    userInvolvement = 'low',
-    lowEndModel = 'claude-3-haiku-20240307',
-    highEndModel = 'claude-3-sonnet-20240229',
-    meetingPurpose = 'Weekly team meeting',
+    userInvolvement,
+    lowEndModel,
+    highEndModel,
+    meetingPurpose,
+    personas,
   }: MeetingSimulatorOptions) {
     this.client = client;
     this.agenda = agenda;
@@ -47,13 +48,12 @@ export class MeetingSimulator {
     this.lowEndModel = lowEndModel;
     this.highEndModel = highEndModel;
     this.meetingPurpose = meetingPurpose;
+    this.availablePersonas = personas;
 
     // Meeting state management
     this.meetingPhase = 'setup'; // Possible values: setup, introductions, discussion, conclusion
     this.lastNonModeratorSpeaker = null;
 
-    // Import personas from the external module
-    this.availablePersonas = {};
     this.agents = {};
     this.moderator = null;
     this.conversationManager = new ConversationManager({});
@@ -73,12 +73,6 @@ export class MeetingSimulator {
   ): Promise<void> {
     // Create status updater function
     const updateStatus = createStatusUpdater(statusCallback);
-
-    // Import personas dynamically to avoid circular dependencies
-    updateStatus('Loading personas library...');
-    await sleep(300); // Small pause to show status
-    const { availablePersonas } = await import('../personas.js');
-    this.availablePersonas = availablePersonas;
 
     // Initialize moderator
     updateStatus('Initializing meeting moderator...');
