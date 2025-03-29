@@ -28,6 +28,7 @@ const saveFile = '.headsinjars.json';
 // Check for command line arguments
 const isValidationMode = process.argv.includes('--validate');
 const isDebugMode = process.argv.includes('--debug');
+const skipSetup = process.argv.includes('--skip-setup');
 
 // Check for agenda file argument
 const agendaFileArg = process.argv.find((arg) => arg.startsWith('--agenda-file='));
@@ -178,76 +179,78 @@ async function main(): Promise<void> {
       | 'save_and_continue'
       | 'continue';
 
-    outer: while (true) {
-      const nextAction: actions = await select({
-        message: 'Setup',
-        loop: false,
-        pageSize: 99,
-        default: 'continue' satisfies actions,
-        choices: [
-          {
-            value: 'involvement',
-            name: 'Level of involvement',
-            description: involvement,
-          },
-          {
-            value: 'select_cheap_model',
-            name: 'Cheap model',
-            description: cheapModel,
-          },
-          {
-            value: 'select_good_model',
-            name: 'Good model',
-            description: goodModel,
-          },
-          new Separator(),
-          {
-            value: 'save_and_continue',
-            name: 'Save as default and continue',
-          },
-          {
-            value: 'continue',
-            name: 'Continue',
-          },
-        ],
-      });
+    if (!skipSetup) {
+      outer: while (true) {
+        const nextAction: actions = await select({
+          message: 'Setup',
+          loop: false,
+          pageSize: 99,
+          default: 'continue' satisfies actions,
+          choices: [
+            {
+              value: 'involvement',
+              name: 'Level of involvement',
+              description: involvement,
+            },
+            {
+              value: 'select_cheap_model',
+              name: 'Cheap model',
+              description: cheapModel,
+            },
+            {
+              value: 'select_good_model',
+              name: 'Good model',
+              description: goodModel,
+            },
+            new Separator(),
+            {
+              value: 'save_and_continue',
+              name: 'Save as default and continue',
+            },
+            {
+              value: 'continue',
+              name: 'Continue',
+            },
+          ],
+        });
 
-      switch (nextAction) {
-        case 'involvement':
-          involvement = await select({
-            message: 'Select your level of involvement in the meeting:',
+        switch (nextAction) {
+          case 'involvement':
+            involvement = await select({
+              message: 'Select your level of involvement in the meeting:',
 
-            choices: [
-              { value: 'none', name: 'None - Just observe the meeting' },
-              { value: 'low', name: 'Low - Occasional input' },
-              { value: 'high', name: 'High - Frequent opportunities to speak' },
-            ],
-          });
-          break;
-        case 'select_cheap_model':
-          cheapModel = await input({
-            message: 'Select cheap model',
-            required: true,
-            default: defaultLowEndModel,
-          });
-          break;
-        case 'select_good_model':
-          goodModel = await input({
-            message: 'Select good model',
-            required: true,
-            default: defaultHighEndModel,
-          });
-          break;
-        case 'save_and_continue':
-          saveDefaults({
-            involvement,
-            lowEndModel: cheapModel,
-            highEndModel: goodModel,
-          });
-          console.log(chalk.green(`Defaults saved to ${chalk.bold(saveFile)}`));
-          break outer;
-        case 'continue':
-          break outer;
+              choices: [
+                { value: 'none', name: 'None - Just observe the meeting' },
+                { value: 'low', name: 'Low - Occasional input' },
+                { value: 'high', name: 'High - Frequent opportunities to speak' },
+              ],
+            });
+            break;
+          case 'select_cheap_model':
+            cheapModel = await input({
+              message: 'Select cheap model',
+              required: true,
+              default: defaultLowEndModel,
+            });
+            break;
+          case 'select_good_model':
+            goodModel = await input({
+              message: 'Select good model',
+              required: true,
+              default: defaultHighEndModel,
+            });
+            break;
+          case 'save_and_continue':
+            saveDefaults({
+              involvement,
+              lowEndModel: cheapModel,
+              highEndModel: goodModel,
+            });
+            console.log(chalk.green(`Defaults saved to ${chalk.bold(saveFile)}`));
+            break outer;
+          case 'continue':
+            break outer;
+        }
       }
     }
 
