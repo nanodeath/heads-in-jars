@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { input } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import { Agent, ModeratorAgent } from './agents.js';
@@ -6,7 +7,6 @@ import type { AnthropicClient } from './api/client.js';
 import type { MeetingSimulatorOptions, Message, PersonaDirectory, PersonaInfo } from './types.js';
 import { createMessage, sleep } from './utils.js';
 import { debugLog } from './utils/index.js';
-import { input } from '@inquirer/prompts';
 
 /**
  * Class for simulating a meeting with AI agents

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
-import { checkbox, confirm, input, select } from '@inquirer/prompts';
+import { Separator, checkbox, confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { config } from 'dotenv';
 import figlet from 'figlet';
@@ -14,6 +14,14 @@ interface AgendaFileData {
   meetingPurpose: string;
   agenda: string[];
 }
+
+interface Defaults {
+  involvement: string;
+  lowEndModel: string;
+  highEndModel: string;
+}
+
+const saveFile = '.headsinjars.json';
 
 // Check for command line arguments
 const isValidationMode = process.argv.includes('--validate');
@@ -153,29 +161,92 @@ async function main(): Promise<void> {
       }),
     );
 
-    // Select user involvement level
-    const involvementPrompt = await select({
-      message: 'Select your level of involvement in the meeting:',
+    const savedDefaults = loadDefaults();
 
-      choices: [
-        { value: 'none', name: 'None - Just observe the meeting' },
-        { value: 'low', name: 'Low - Occasional input' },
-        { value: 'high', name: 'High - Frequent opportunities to speak' },
-      ],
-    });
+    let involvement = savedDefaults?.involvement ?? 'none';
+    let cheapModel = savedDefaults?.lowEndModel ?? defaultLowEndModel;
+    let goodModel = savedDefaults?.highEndModel ?? defaultHighEndModel;
 
-    const models = {
-      lowEndModel: await input({
-        message: 'Select cheap model',
-        required: true,
-        default: defaultLowEndModel,
-      }),
-      highEndModel: await input({
-        message: 'Select good model',
-        required: true,
-        default: defaultHighEndModel,
-      }),
-    };
+    type actions =
+      | 'involvement'
+      | 'select_cheap_model'
+      | 'select_good_model'
+      | 'meeting_purpose'
+      | 'save_and_continue'
+      | 'continue';
+
+    outer: while (true) {
+      const nextAction: actions = await select({
+        message: 'Setup',
+        loop: false,
+        pageSize: 99,
+        default: 'continue' satisfies actions,
+        choices: [
+          {
+            value: 'involvement',
+            name: 'Level of involvement',
+            description: involvement,
+          },
+          {
+            value: 'select_cheap_model',
+            name: 'Cheap model',
+            description: cheapModel,
+          },
+          {
+            value: 'select_good_model',
+            name: 'Good model',
+            description: goodModel,
+          },
+          new Separator(),
+          {
+            value: 'save_and_continue',
+            name: 'Save as default and continue',
+          },
+          {
+            value: 'continue',
+            name: 'Continue',
+          },
+        ],
+      });
+
+      switch (nextAction) {
+        case 'involvement':
+          involvement = await select({
+            message: 'Select your level of involvement in the meeting:',
+
+            choices: [
+              { value: 'none', name: 'None - Just observe the meeting' },
+              { value: 'low', name: 'Low - Occasional input' },
+              { value: 'high', name: 'High - Frequent opportunities to speak' },
+            ],
+          });
+          break;
+        case 'select_cheap_model':
+          cheapModel = await input({
+            message: 'Select cheap model',
+            required: true,
+            default: defaultLowEndModel,
+          });
+          break;
+        case 'select_good_model':
+          goodModel = await input({
+            message: 'Select good model',
+            required: true,
+            default: defaultHighEndModel,
+          });
+          break;
+        case 'save_and_continue':
+          saveDefaults({
+            involvement,
+            lowEndModel: cheapModel,
+            highEndModel: goodModel,
+          });
+          console.log(chalk.green(`Defaults saved to ${chalk.bold(saveFile)}`));
+          break outer;
+        case 'continue':
+          break outer;
+      }
+    }
 
     // Get meeting purpose and agenda items (either from file or user input)
     let meetingPurpose: string | undefined;
@@ -201,7 +272,6 @@ async function main(): Promise<void> {
       }
     }
 
-    // If we didn't get meeting purpose from file, ask the user
     if (!meetingPurpose) {
       meetingPurpose = await input({
         message: 'Enter a brief description of the meeting purpose:',
@@ -252,9 +322,9 @@ async function main(): Promise<void> {
     const simulator = new MeetingSimulator({
       client,
       agenda,
-      userInvolvement: involvementPrompt,
-      lowEndModel: models.lowEndModel,
-      highEndModel: models.highEndModel,
+      userInvolvement: involvement,
+      lowEndModel: cheapModel,
+      highEndModel: goodModel,
       meetingPurpose,
     });
 
@@ -380,6 +450,18 @@ async function main(): Promise<void> {
     console.error(chalk.red('Error:'), error);
     process.exit(1);
   }
+}
+
+function saveDefaults(data: Defaults) {
+  fs.writeFileSync(saveFile, JSON.stringify(data, undefined, 2), { encoding: 'utf8' });
+}
+
+function loadDefaults(): Defaults | undefined {
+  if (!fs.existsSync(saveFile)) {
+    return undefined;
+  }
+  const file = fs.readFileSync(saveFile, 'utf8');
+  return JSON.parse(file);
 }
 
 main();

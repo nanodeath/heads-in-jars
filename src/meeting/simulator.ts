@@ -1,3 +1,4 @@
+import { input } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { Agent } from '../agents/agent.js';
 import { ModeratorAgent } from '../agents/moderator.js';
@@ -11,7 +12,6 @@ import { debugLog, sleep } from '../utils/index.js';
 import { ConversationManager } from './conversation.js';
 import { selectNextSpeaker } from './speaker.js';
 import { saveTranscript as saveTranscriptToFile } from './transcript.js';
-import { input } from '@inquirer/prompts';
 
 /**
  * Class for simulating a meeting with AI agents
