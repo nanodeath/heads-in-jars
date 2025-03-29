@@ -1,14 +1,9 @@
-#!/usr/bin/env node
+import fs from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
+import { checkbox, confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { config } from 'dotenv';
-// Import enquirer as ESM
-import Enquirer from 'enquirer';
 import figlet from 'figlet';
-// Access specific prompt classes dynamically
-// biome-ignore lint/suspicious/noExplicitAny: Enquirer doesn't have proper types
-const { Confirm, Input, Select, Form, MultiSelect } = Enquirer as any;
-import fs from 'node:fs';
 import ora from 'ora';
 
 // Load environment variables
@@ -143,11 +138,10 @@ async function main(): Promise<void> {
     let apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
-      const apiKeyPrompt = await new Input({
-        name: 'apiKey',
+      const apiKeyPrompt = await input({
         message: 'Enter your Anthropic API key:',
-        validate: (value: string) => (value.length > 0 ? true : 'API key is required'),
-      }).run();
+        required: true,
+      });
 
       apiKey = apiKeyPrompt;
     }
@@ -160,33 +154,28 @@ async function main(): Promise<void> {
     );
 
     // Select user involvement level
-    const involvementPrompt = await new Select({
-      name: 'involvement',
+    const involvementPrompt = await select({
       message: 'Select your level of involvement in the meeting:',
-      choices: [
-        { name: 'none', message: 'None - Just observe the meeting' },
-        { name: 'low', message: 'Low - Occasional input' },
-        { name: 'high', message: 'High - Frequent opportunities to speak' },
-      ],
-    }).run();
 
-    // Select models to use
-    const modelsForm = await new Form({
-      name: 'models',
-      message: 'Select Claude models to use (or press Enter for defaults):',
       choices: [
-        {
-          name: 'lowEndModel',
-          message: 'Low-end model (for urgency)',
-          initial: defaultLowEndModel,
-        },
-        {
-          name: 'highEndModel',
-          message: 'High-end model (for responses)',
-          initial: defaultHighEndModel,
-        },
+        { value: 'none', name: 'None - Just observe the meeting' },
+        { value: 'low', name: 'Low - Occasional input' },
+        { value: 'high', name: 'High - Frequent opportunities to speak' },
       ],
-    }).run();
+    });
+
+    const models = {
+      lowEndModel: await input({
+        message: 'Select cheap model',
+        required: true,
+        default: defaultLowEndModel,
+      }),
+      highEndModel: await input({
+        message: 'Select good model',
+        required: true,
+        default: defaultHighEndModel,
+      }),
+    };
 
     // Get meeting purpose and agenda items (either from file or user input)
     let meetingPurpose: string | undefined;
@@ -214,11 +203,10 @@ async function main(): Promise<void> {
 
     // If we didn't get meeting purpose from file, ask the user
     if (!meetingPurpose) {
-      meetingPurpose = await new Input({
-        name: 'purpose',
+      meetingPurpose = await input({
         message: 'Enter a brief description of the meeting purpose:',
-        initial: 'Weekly project status and planning',
-      }).run();
+        default: 'Weekly project status and planning',
+      });
     }
 
     // If we didn't get agenda from file, ask the user
@@ -231,12 +219,10 @@ async function main(): Promise<void> {
       let initialValue = 'Project status updates';
 
       while (true) {
-        const agendaItem = await new Input({
-          name: 'item',
+        const agendaItem = await input({
           message: `Agenda item #${itemNumber}:`,
-          initial: initialValue,
-          hint: itemNumber === 1 ? '(press Enter to submit, leave blank when finished)' : '(leave blank when finished)',
-        }).run();
+          default: initialValue,
+        });
 
         // Clear the initial value after first item
         initialValue = '';
@@ -267,8 +253,8 @@ async function main(): Promise<void> {
       client,
       agenda,
       userInvolvement: involvementPrompt,
-      lowEndModel: modelsForm.lowEndModel,
-      highEndModel: modelsForm.highEndModel,
+      lowEndModel: models.lowEndModel,
+      highEndModel: models.highEndModel,
       meetingPurpose,
     });
 
@@ -290,8 +276,9 @@ async function main(): Promise<void> {
         // Create choices for MultiSelect
         const choices = Object.entries(availablePersonas).map(([id, info]) => {
           return {
-            name: id,
-            message: `${info.name} (${info.role}) - ${info.description}`,
+            value: id,
+            name: `${info.name} (${info.role}) - ${info.description}`,
+            checked: !!recommendedPersonas[id],
           };
         });
 
@@ -299,17 +286,14 @@ async function main(): Promise<void> {
         const initialSelection = Object.keys(recommendedPersonas);
 
         // Use MultiSelect to let user choose personas
-        const selectedIds = await new MultiSelect({
-          name: 'personas',
+        const selectedIds = await checkbox({
           message: 'Select meeting participants (space to toggle, enter to confirm):',
           choices,
-          initial: initialSelection, // Pre-select recommended personas
-          hint: 'Select at least 2 participants',
-          validate: (selected: string[]) => {
+          validate: (selected) => {
             if (selected.length < 2) return 'Please select at least 2 participants';
             return true;
           },
-        }).run();
+        });
 
         // Create object of selected personas
         const selectedPersonas: Record<string, PersonaInfo> = {};
@@ -362,11 +346,10 @@ async function main(): Promise<void> {
     console.log();
 
     // Ask if user wants to save the transcript
-    const saveTranscript = await new Confirm({
-      name: 'save',
+    const saveTranscript = await confirm({
       message: 'Save meeting transcript?',
-      initial: true,
-    }).run();
+      default: true,
+    });
 
     if (saveTranscript) {
       // Get the current date in YYYY-MM-DD format

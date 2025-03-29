@@ -1,12 +1,4 @@
-/**
- * Meeting Simulator class
- */
-
 import chalk from 'chalk';
-import Enquirer from 'enquirer';
-// Access Input class dynamically
-// biome-ignore lint/suspicious/noExplicitAny: Enquirer doesn't have proper types
-const Input = (Enquirer as any).Input;
 import { Agent } from '../agents/agent.js';
 import { ModeratorAgent } from '../agents/moderator.js';
 import type { AnthropicClient, MessageParams } from '../api/client.js';
@@ -19,6 +11,7 @@ import { debugLog, sleep } from '../utils/index.js';
 import { ConversationManager } from './conversation.js';
 import { selectNextSpeaker } from './speaker.js';
 import { saveTranscript as saveTranscriptToFile } from './transcript.js';
+import { input } from '@inquirer/prompts';
 
 /**
  * Class for simulating a meeting with AI agents
@@ -303,11 +296,9 @@ export class MeetingSimulator {
 
       if (userTurn) {
         console.log(chalk.cyan('\n🎯 Your turn to speak:'));
-        const userInput = await new Input({
-          name: 'input',
+        const userInput = await input({
           message: chalk.cyanBright.bold('💬 You:'),
-          initial: '',
-        }).run();
+        });
 
         if (['exit', 'quit', 'end meeting'].includes(userInput.toLowerCase())) {
           await this.endMeetingEarly();
@@ -451,11 +442,9 @@ export class MeetingSimulator {
       }
     } else {
       // User interrupted, let them speak
-      const userInput = await new Input({
-        name: 'input',
+      const userInput = await input({
         message: chalk.yellowBright.bold('🙋 You:'),
-        initial: '',
-      }).run();
+      });
 
       if (['exit', 'quit', 'end meeting'].includes(userInput.toLowerCase())) {
         await this.endMeetingEarly();
