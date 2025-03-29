@@ -1,11 +1,7 @@
 import fs from 'node:fs';
+import { input } from '@inquirer/prompts';
 import chalk from 'chalk';
-// Import enquirer as ESM
-import Enquirer from 'enquirer';
 import ora from 'ora';
-// Access Input class dynamically
-// biome-ignore lint/suspicious/noExplicitAny: Enquirer doesn't have proper types
-const Input = (Enquirer as any).Input;
 import { Agent, ModeratorAgent } from './agents.js';
 import type { AnthropicClient } from './api/client.js';
 import type { MeetingSimulatorOptions, Message, PersonaDirectory, PersonaInfo } from './types.js';
@@ -271,11 +267,9 @@ export class MeetingSimulator {
 
       if (userTurn) {
         console.log(chalk.cyan('\n🎯 Your turn to speak:'));
-        const userInput = await new Input({
-          name: 'input',
+        const userInput = await input({
           message: chalk.cyanBright.bold('💬 You:'),
-          initial: '',
-        }).run();
+        });
 
         if (['exit', 'quit', 'end meeting'].includes(userInput.toLowerCase())) {
           console.log(chalk.cyan('\n=== Ending Meeting Early ===\n'));
@@ -590,11 +584,9 @@ export class MeetingSimulator {
           turnsSinceUserInput += 1;
         } else {
           // User interrupted, let them speak
-          const userInput = await new Input({
-            name: 'input',
+          const userInput = await input({
             message: chalk.yellowBright.bold('🙋 You:'),
-            initial: '',
-          }).run();
+          });
 
           if (['exit', 'quit', 'end meeting'].includes(userInput.toLowerCase())) {
             console.log(chalk.cyan('\n=== Ending Meeting Early ===\n'));

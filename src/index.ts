@@ -1,14 +1,9 @@
-#!/usr/bin/env node
+import fs from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
+import { Separator, checkbox, confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { config } from 'dotenv';
-// Import enquirer as ESM
-import Enquirer from 'enquirer';
 import figlet from 'figlet';
-// Access specific prompt classes dynamically
-// biome-ignore lint/suspicious/noExplicitAny: Enquirer doesn't have proper types
-const { Confirm, Input, Select, Form, MultiSelect } = Enquirer as any;
-import fs from 'node:fs';
 import ora from 'ora';
 
 // Load environment variables
@@ -20,9 +15,20 @@ interface AgendaFileData {
   agenda: string[];
 }
 
+const defaultsSchema = z.object({
+  involvement: z.enum(['none', 'low', 'high']),
+  lowEndModel: z.string(),
+  highEndModel: z.string(),
+});
+
+type Defaults = z.infer<typeof defaultsSchema>;
+
+const saveFile = '.headsinjars.json';
+
 // Check for command line arguments
 const isValidationMode = process.argv.includes('--validate');
 const isDebugMode = process.argv.includes('--debug');
+const skipSetup = process.argv.includes('--skip-setup');
 
 // Check for agenda file argument
 const agendaFileArg = process.argv.find((arg) => arg.startsWith('--agenda-file='));
@@ -39,6 +45,7 @@ import { availablePersonas } from './personas.js';
 // Import UI utilities
 import { debugLog } from './utils/formatting.js';
 
+import { z } from 'zod';
 import { AnthropicClient } from './api/index.js';
 // Import types
 import type { PersonaDirectory, PersonaInfo } from './types.js';
@@ -143,11 +150,10 @@ async function main(): Promise<void> {
     let apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
-      const apiKeyPrompt = await new Input({
-        name: 'apiKey',
+      const apiKeyPrompt = await input({
         message: 'Enter your Anthropic API key:',
-        validate: (value: string) => (value.length > 0 ? true : 'API key is required'),
-      }).run();
+        required: true,
+      });
 
       apiKey = apiKeyPrompt;
     }
@@ -159,34 +165,94 @@ async function main(): Promise<void> {
       }),
     );
 
-    // Select user involvement level
-    const involvementPrompt = await new Select({
-      name: 'involvement',
-      message: 'Select your level of involvement in the meeting:',
-      choices: [
-        { name: 'none', message: 'None - Just observe the meeting' },
-        { name: 'low', message: 'Low - Occasional input' },
-        { name: 'high', message: 'High - Frequent opportunities to speak' },
-      ],
-    }).run();
+    const savedDefaults = loadDefaults();
 
-    // Select models to use
-    const modelsForm = await new Form({
-      name: 'models',
-      message: 'Select Claude models to use (or press Enter for defaults):',
-      choices: [
-        {
-          name: 'lowEndModel',
-          message: 'Low-end model (for urgency)',
-          initial: defaultLowEndModel,
-        },
-        {
-          name: 'highEndModel',
-          message: 'High-end model (for responses)',
-          initial: defaultHighEndModel,
-        },
-      ],
-    }).run();
+    let involvement = savedDefaults?.involvement ?? 'none';
+    let cheapModel = savedDefaults?.lowEndModel ?? defaultLowEndModel;
+    let goodModel = savedDefaults?.highEndModel ?? defaultHighEndModel;
+
+    type actions =
+      | 'involvement'
+      | 'select_cheap_model'
+      | 'select_good_model'
+      | 'meeting_purpose'
+      | 'save_and_continue'
+      | 'continue';
+
+    if (!skipSetup) {
+      outer: while (true) {
+        const nextAction: actions = await select({
+          message: 'Setup',
+          loop: false,
+          pageSize: 99,
+          default: 'continue' satisfies actions,
+          choices: [
+            {
+              value: 'involvement',
+              name: 'Level of involvement',
+              description: involvement,
+            },
+            {
+              value: 'select_cheap_model',
+              name: 'Cheap model',
+              description: cheapModel,
+            },
+            {
+              value: 'select_good_model',
+              name: 'Good model',
+              description: goodModel,
+            },
+            new Separator(),
+            {
+              value: 'save_and_continue',
+              name: 'Save as default and continue',
+            },
+            {
+              value: 'continue',
+              name: 'Continue',
+            },
+          ],
+        });
+
+        switch (nextAction) {
+          case 'involvement':
+            involvement = await select({
+              message: 'Select your level of involvement in the meeting:',
+
+              choices: [
+                { value: 'none', name: 'None - Just observe the meeting' },
+                { value: 'low', name: 'Low - Occasional input' },
+                { value: 'high', name: 'High - Frequent opportunities to speak' },
+              ],
+            });
+            break;
+          case 'select_cheap_model':
+            cheapModel = await input({
+              message: 'Select cheap model',
+              required: true,
+              default: defaultLowEndModel,
+            });
+            break;
+          case 'select_good_model':
+            goodModel = await input({
+              message: 'Select good model',
+              required: true,
+              default: defaultHighEndModel,
+            });
+            break;
+          case 'save_and_continue':
+            saveDefaults({
+              involvement,
+              lowEndModel: cheapModel,
+              highEndModel: goodModel,
+            });
+            console.log(chalk.green(`Defaults saved to ${chalk.bold(saveFile)}`));
+            break outer;
+          case 'continue':
+            break outer;
+        }
+      }
+    }
 
     // Get meeting purpose and agenda items (either from file or user input)
     let meetingPurpose: string | undefined;
@@ -212,13 +278,11 @@ async function main(): Promise<void> {
       }
     }
 
-    // If we didn't get meeting purpose from file, ask the user
     if (!meetingPurpose) {
-      meetingPurpose = await new Input({
-        name: 'purpose',
+      meetingPurpose = await input({
         message: 'Enter a brief description of the meeting purpose:',
-        initial: 'Weekly project status and planning',
-      }).run();
+        default: 'Weekly project status and planning',
+      });
     }
 
     // If we didn't get agenda from file, ask the user
@@ -231,12 +295,10 @@ async function main(): Promise<void> {
       let initialValue = 'Project status updates';
 
       while (true) {
-        const agendaItem = await new Input({
-          name: 'item',
+        const agendaItem = await input({
           message: `Agenda item #${itemNumber}:`,
-          initial: initialValue,
-          hint: itemNumber === 1 ? '(press Enter to submit, leave blank when finished)' : '(leave blank when finished)',
-        }).run();
+          default: initialValue,
+        });
 
         // Clear the initial value after first item
         initialValue = '';
@@ -266,9 +328,9 @@ async function main(): Promise<void> {
     const simulator = new MeetingSimulator({
       client,
       agenda,
-      userInvolvement: involvementPrompt,
-      lowEndModel: modelsForm.lowEndModel,
-      highEndModel: modelsForm.highEndModel,
+      userInvolvement: involvement,
+      lowEndModel: cheapModel,
+      highEndModel: goodModel,
       meetingPurpose,
     });
 
@@ -290,8 +352,9 @@ async function main(): Promise<void> {
         // Create choices for MultiSelect
         const choices = Object.entries(availablePersonas).map(([id, info]) => {
           return {
-            name: id,
-            message: `${info.name} (${info.role}) - ${info.description}`,
+            value: id,
+            name: `${info.name} (${info.role}) - ${info.description}`,
+            checked: !!recommendedPersonas[id],
           };
         });
 
@@ -299,17 +362,14 @@ async function main(): Promise<void> {
         const initialSelection = Object.keys(recommendedPersonas);
 
         // Use MultiSelect to let user choose personas
-        const selectedIds = await new MultiSelect({
-          name: 'personas',
+        const selectedIds = await checkbox({
           message: 'Select meeting participants (space to toggle, enter to confirm):',
           choices,
-          initial: initialSelection, // Pre-select recommended personas
-          hint: 'Select at least 2 participants',
-          validate: (selected: string[]) => {
+          validate: (selected) => {
             if (selected.length < 2) return 'Please select at least 2 participants';
             return true;
           },
-        }).run();
+        });
 
         // Create object of selected personas
         const selectedPersonas: Record<string, PersonaInfo> = {};
@@ -362,11 +422,10 @@ async function main(): Promise<void> {
     console.log();
 
     // Ask if user wants to save the transcript
-    const saveTranscript = await new Confirm({
-      name: 'save',
+    const saveTranscript = await confirm({
       message: 'Save meeting transcript?',
-      initial: true,
-    }).run();
+      default: true,
+    });
 
     if (saveTranscript) {
       // Get the current date in YYYY-MM-DD format
@@ -396,6 +455,24 @@ async function main(): Promise<void> {
   } catch (error: unknown) {
     console.error(chalk.red('Error:'), error);
     process.exit(1);
+  }
+}
+
+function saveDefaults(data: Defaults) {
+  fs.writeFileSync(saveFile, JSON.stringify(data, undefined, 2), { encoding: 'utf8' });
+}
+
+function loadDefaults(): Defaults | undefined {
+  if (!fs.existsSync(saveFile)) {
+    return undefined;
+  }
+  const file = fs.readFileSync(saveFile, 'utf8');
+  try {
+    const json = JSON.parse(file);
+    return defaultsSchema.parse(json);
+  } catch (e: unknown) {
+    console.error(chalk.red(`Defaults file at ${saveFile} is invalid, ignoring...you may wish to remove it`));
+    return undefined;
   }
 }
 
