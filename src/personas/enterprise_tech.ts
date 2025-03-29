@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { PersonaDirectory } from './types.js';
+import type { PersonaDirectory } from '../types.js';
 
 /**
  * Available personas for the meeting simulator
@@ -19,7 +19,7 @@ import type { PersonaDirectory } from './types.js';
  * - blueBright: Marketing Director (represents user acquisition and market positioning)
  * - cyan: Data Scientist (represents data-driven insights)
  */
-export const availablePersonas: PersonaDirectory = {
+export const enterpriseTechPersonas: PersonaDirectory = {
   junior_dev: {
     name: 'Alex',
     description: 'Junior Developer who is eager to learn but lacks experience',
