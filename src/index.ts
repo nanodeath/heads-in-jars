@@ -40,13 +40,13 @@ global.isDebugMode = isDebugMode;
 // Import agent and meeting modules
 import { Agent } from './agents/index.js';
 import { MeetingSimulator } from './meeting/index.js';
-import { availablePersonas } from './personas.js';
 
 // Import UI utilities
 import { debugLog } from './utils/formatting.js';
 
 import { z } from 'zod';
 import { AnthropicClient } from './api/index.js';
+import { availablePersonas } from './personas/index.js';
 // Import types
 import type { PersonaDirectory, PersonaInfo } from './types.js';
 
@@ -110,9 +110,6 @@ function validateImports(): boolean {
   });
   console.log('✓ agents.ts: Agent, ModeratorAgent');
 
-  // Validate personas
-  console.log(`✓ personas.ts: ${Object.keys(availablePersonas).length} personas available`);
-
   // Validate meeting simulator
   console.log('✓ meeting.ts: MeetingSimulator');
 
@@ -171,13 +168,7 @@ async function main(): Promise<void> {
     let cheapModel = savedDefaults?.lowEndModel ?? defaultLowEndModel;
     let goodModel = savedDefaults?.highEndModel ?? defaultHighEndModel;
 
-    type actions =
-      | 'involvement'
-      | 'select_cheap_model'
-      | 'select_good_model'
-      | 'meeting_purpose'
-      | 'save_and_continue'
-      | 'continue';
+    type actions = 'involvement' | 'select_cheap_model' | 'select_good_model' | 'save_and_continue' | 'continue';
 
     if (!skipSetup) {
       outer: while (true) {
@@ -285,6 +276,16 @@ async function main(): Promise<void> {
       });
     }
 
+    const availablePanels = Object.keys(availablePersonas());
+
+    const personaPanelName = await select({
+      message: 'Choose a panel',
+      choices: availablePanels.map((panel) => ({
+        value: panel,
+      })),
+    });
+    const personaPanel = availablePersonas()[personaPanelName];
+
     // If we didn't get agenda from file, ask the user
     if (agenda.length === 0) {
       console.log(chalk.yellow('\nEnter agenda items (leave blank when done):'));
@@ -332,6 +333,7 @@ async function main(): Promise<void> {
       lowEndModel: cheapModel,
       highEndModel: goodModel,
       meetingPurpose,
+      personas: personaPanel,
     });
 
     // Wait for initialization to complete with detailed status updates and persona selection
@@ -358,13 +360,12 @@ async function main(): Promise<void> {
           };
         });
 
-        // Get the IDs of recommended personas to use as initial selection
-        const initialSelection = Object.keys(recommendedPersonas);
-
         // Use MultiSelect to let user choose personas
         const selectedIds = await checkbox({
           message: 'Select meeting participants (space to toggle, enter to confirm):',
           choices,
+          loop: false,
+          pageSize: 10,
           validate: (selected) => {
             if (selected.length < 2) return 'Please select at least 2 participants';
             return true;
