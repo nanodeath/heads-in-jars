@@ -15,11 +15,13 @@ interface AgendaFileData {
   agenda: string[];
 }
 
-interface Defaults {
-  involvement: string;
-  lowEndModel: string;
-  highEndModel: string;
-}
+const defaultsSchema = z.object({
+  involvement: z.enum(['none', 'low', 'high']),
+  lowEndModel: z.string(),
+  highEndModel: z.string(),
+});
+
+type Defaults = z.infer<typeof defaultsSchema>;
 
 const saveFile = '.headsinjars.json';
 
@@ -42,6 +44,7 @@ import { availablePersonas } from './personas.js';
 // Import UI utilities
 import { debugLog } from './utils/formatting.js';
 
+import { z } from 'zod';
 import { AnthropicClient } from './api/index.js';
 // Import types
 import type { PersonaDirectory, PersonaInfo } from './types.js';
@@ -461,7 +464,13 @@ function loadDefaults(): Defaults | undefined {
     return undefined;
   }
   const file = fs.readFileSync(saveFile, 'utf8');
-  return JSON.parse(file);
+  try {
+    const json = JSON.parse(file);
+    return defaultsSchema.parse(json);
+  } catch (e: unknown) {
+    console.error(chalk.red(`Defaults file at ${saveFile} is invalid, ignoring...you may wish to remove it`));
+    return undefined;
+  }
 }
 
 main();

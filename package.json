@@ -32,7 +32,8 @@
     "chalk": "^5.4.1",
     "dotenv": "^16.4.7",
     "figlet": "^1.8.0",
-    "ora": "^8.2.0"
+    "ora": "^8.2.0",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
